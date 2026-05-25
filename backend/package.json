@@ -42,4 +42,22 @@
     "tsx": "^4.22.3",
     "typescript": "^6.0.3"
   }
+
+
+
+
+  {
+  "name": "pharmacy-pos-backend",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "build": "npm install",
+    "postinstall": "npm run prisma:generate",
+    "prisma:generate": "prisma generate"
+  },
+  "engines": {
+    "node": "20.18.0"
+  }
+}
 }
