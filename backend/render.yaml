@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: pharmacy-pos-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate
+    startCommand: node src/server.js
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: SMTP_FROM
+        value: boitumelomosiuoa2002@gmail.com
+      - key: PHARMACY_NAME
+        value: Pharmacy POS System
+      - key: PORT
+        value: 5000
+      - key: NODE_VERSION
+        value: 20
