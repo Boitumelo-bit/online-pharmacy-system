@@ -1,43 +1,34 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
-const prisma = require('../config/prisma');
+const {
+  getAddresses,
+  getAddressById,
+  createAddress,
+  updateAddress,
+  deleteAddress,
+  setDefaultAddress
+} = require('../controllers/addressController');
 
-// Get user addresses
-router.get('/', verifyToken, async (req, res) => {
-  try {
-    const addresses = await prisma.address.findMany({
-      where: { userId: req.user.id },
-    });
-    res.json(addresses);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+// All address routes require authentication
+router.use(verifyToken);
+
+// Get all addresses
+router.get('/', getAddresses);
+
+// Get single address
+router.get('/:id', getAddressById);
 
 // Create address
-router.post('/', verifyToken, async (req, res) => {
-  try {
-    const { fullName, phone, addressLine1, addressLine2, city, state, zipCode, country, isDefault } = req.body;
-    
-    const address = await prisma.address.create({
-      data: {
-        userId: req.user.id,
-        fullName,
-        phone,
-        addressLine1,
-        addressLine2,
-        city,
-        state,
-        zipCode,
-        country,
-        isDefault: isDefault || false,
-      },
-    });
-    res.status(201).json(address);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+router.post('/', createAddress);
+
+// Update address
+router.put('/:id', updateAddress);
+
+// Delete address
+router.delete('/:id', deleteAddress);
+
+// Set default address
+router.put('/:id/default', setDefaultAddress);
 
 module.exports = router;
