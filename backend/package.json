@@ -6,11 +6,12 @@
 "scripts": {
   "start": "node src/server.js",
   "dev": "nodemon src/server.js",
-  "postinstall": "npx prisma generate"
+  "prisma:generate": "prisma generate"
 },
   "engines": {
     "node": "20.18.0"
   },
+  
   "dependencies": {
     "@getbrevo/brevo": "^5.0.4",
     "@prisma/client": "^5.22.0",
