@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "postinstall": "prisma generate"
   },
   "engines": {
     "node": "20.18.0"
@@ -27,7 +28,6 @@
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
-    "node-fetch": "^3.3.2",
     "nodemailer": "^8.0.7",
     "sib-api-v3-sdk": "^8.5.0",
     "socket.io": "^4.8.3"
