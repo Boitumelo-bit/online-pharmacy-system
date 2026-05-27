@@ -1,6 +1,7 @@
 const prisma = require('../config/prisma');
 const { sendOrderUpdate, sendNotification } = require('../sockets/socketHandler');
-const fetch = require('node-fetch');
+
+const fetch = globalThis.fetch;
 
 // Try to load email services, fallback gracefully
 let sendOrderConfirmation, sendOrderStatusUpdate;
