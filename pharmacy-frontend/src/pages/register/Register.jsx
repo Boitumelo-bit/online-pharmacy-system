@@ -3,11 +3,15 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { Mail, Lock, User, Phone, LogIn, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
+import OtpVerification from '../../components/auth/OtpVerification';
 
 const Register = () => {
   const navigate = useNavigate();
   const { register, isLoading } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
+  const [showOtpScreen, setShowOtpScreen] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [registeredUserId, setRegisteredUserId] = useState('');
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -41,6 +45,7 @@ const Register = () => {
       return;
     }
 
+    // Use the authStore register function
     const result = await register({
       fullName: formData.fullName,
       email: formData.email,
@@ -48,13 +53,32 @@ const Register = () => {
       password: formData.password,
     });
     
-    if (result.success) {
+    if (result.success && result.requiresOtp) {
+      setRegisteredEmail(formData.email);
+      setRegisteredUserId(result.userId);
+      setShowOtpScreen(true);
+      toast.success(result.message || 'Verification code sent to your email!');
+    } else if (result.success && !result.requiresOtp) {
       toast.success('Registration successful!');
       navigate('/dashboard');
     } else {
-      toast.error(result.error);
+      toast.error(result.error || 'Registration failed');
     }
   };
+
+  const handleBackToRegister = () => {
+    setShowOtpScreen(false);
+  };
+
+  if (showOtpScreen) {
+    return (
+      <OtpVerification 
+        email={registeredEmail}
+        userId={registeredUserId}
+        onBack={handleBackToRegister}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
@@ -116,7 +140,7 @@ const Register = () => {
                     value={formData.phone}
                     onChange={handleChange}
                     className="pl-10 w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    placeholder="+8801234567890"
+                    placeholder="+1234567890"
                   />
                 </div>
               </div>

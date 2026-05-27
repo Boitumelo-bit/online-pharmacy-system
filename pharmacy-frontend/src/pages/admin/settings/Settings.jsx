@@ -22,6 +22,7 @@ const AdminSettings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveProgress, setSaveProgress] = useState({ current: 0, total: 0 });
 
   useEffect(() => {
     fetchSettings();
@@ -41,7 +42,7 @@ const AdminSettings = () => {
           currency: data.currency || 'M',
           vat_percentage: data.vat_percentage || '15',
           delivery_fee: data.delivery_fee || '5',
-          free_delivery_min: data.free_delivery_min_amount || '100',
+          free_delivery_min: data.free_delivery_min || '100',
           business_hours: data.business_hours || 'Mon-Fri: 8am-8pm, Sat: 9am-6pm, Sun: Closed',
           facebook: data.facebook || '',
           twitter: data.twitter || '',
@@ -58,25 +59,60 @@ const AdminSettings = () => {
   };
 
   const handleSave = async () => {
+    if (saving) return; // Prevent multiple simultaneous saves
+    
     setSaving(true);
     setSaveSuccess(false);
     
+    // Map frontend keys to backend database keys
+    const keyMapping = {
+      free_delivery_min: 'free_delivery_min_amount',
+    };
+    
+    const settingsArray = Object.entries(settings);
+    let successCount = 0;
+    let failCount = 0;
+    
     try {
-      // Save each setting individually
-      const promises = Object.entries(settings).map(([key, value]) => 
-        api.post('/dashboard/settings', { key, value })
-      );
+      // Save settings sequentially to prevent server overload
+      for (let i = 0; i < settingsArray.length; i++) {
+        const [key, value] = settingsArray[i];
+        const dbKey = keyMapping[key] || key;
+        
+        setSaveProgress({ current: i + 1, total: settingsArray.length });
+        
+        try {
+          await api.put('/dashboard/settings', { key: dbKey, value });
+          successCount++;
+          console.log(`✅ Saved ${key} (${dbKey}):`, value);
+          
+          // Small delay between requests (50ms) to prevent overwhelming the server
+          if (i < settingsArray.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+        } catch (err) {
+          failCount++;
+          console.error(`❌ Failed to save ${key}:`, err);
+        }
+      }
       
-      await Promise.all(promises);
+      if (failCount === 0) {
+        setSaveSuccess(true);
+        toast.success(`${successCount} settings saved successfully!`);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        toast.warning(`${successCount} saved, ${failCount} failed`);
+      }
       
-      setSaveSuccess(true);
-      toast.success('Settings saved successfully!');
-      setTimeout(() => setSaveSuccess(false), 3000);
+      // Refresh settings to confirm changes
+      await fetchSettings();
+      
     } catch (error) {
       console.error('Error saving settings:', error);
-      toast.error('Failed to save settings');
+      toast.error(error.response?.data?.message || 'Failed to save settings');
     } finally {
       setSaving(false);
+      setSaveProgress({ current: 0, total: 0 });
     }
   };
 
@@ -224,7 +260,7 @@ const AdminSettings = () => {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Delivery Fee (M)
+                  Delivery Fee ({settings.currency})
                 </label>
                 <input
                   type="number"
@@ -238,7 +274,7 @@ const AdminSettings = () => {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Free Delivery Min. (M)
+                  Free Delivery Min. ({settings.currency})
                 </label>
                 <input
                   type="number"
@@ -335,30 +371,46 @@ const AdminSettings = () => {
           </div>
         </div>
         
-        {/* Save Button */}
-        <div className="px-5 py-4 bg-gray-50 dark:bg-gray-700/30 border-t border-gray-200 dark:border-gray-700 flex justify-end">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="btn-primary inline-flex items-center gap-2 px-5 py-2 text-sm"
-          >
-            {saving ? (
-              <>
-                <Loader className="w-4 h-4 animate-spin" />
-                <span>Saving...</span>
-              </>
-            ) : saveSuccess ? (
-              <>
-                <CheckCircle className="w-4 h-4" />
-                <span>Saved!</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                <span>Save Settings</span>
-              </>
-            )}
-          </button>
+        {/* Save Button with Progress */}
+        <div className="px-5 py-4 bg-gray-50 dark:bg-gray-700/30 border-t border-gray-200 dark:border-gray-700">
+          {saving && saveProgress.total > 0 && (
+            <div className="mb-3">
+              <div className="flex justify-between text-xs text-gray-500 mb-1">
+                <span>Saving settings...</span>
+                <span>{saveProgress.current} / {saveProgress.total}</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-1.5">
+                <div 
+                  className="bg-primary-500 h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${(saveProgress.current / saveProgress.total) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="btn-primary inline-flex items-center gap-2 px-5 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? (
+                <>
+                  <Loader className="w-4 h-4 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : saveSuccess ? (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Saved!</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span>Save Settings</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
       

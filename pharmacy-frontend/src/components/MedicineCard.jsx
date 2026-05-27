@@ -6,7 +6,7 @@ import { useAuthStore } from '../stores/authStore';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
-const MedicineCard = ({ medicine, onViewDetails }) => {
+const MedicineCard = ({ medicine, onViewDetails, currencySymbol = 'M' }) => {
   const { addItem } = useCartStore();
   const { addToWishlist, removeFromWishlist, checkInWishlist } = useWishlistStore();
   const { isAuthenticated, user } = useAuthStore();
@@ -155,21 +155,21 @@ const MedicineCard = ({ medicine, onViewDetails }) => {
           {medicine.description}
         </p>
         
-        {/* Price and Stock Row - Fixed height */}
+        {/* Price and Stock Row - Fixed height - Using dynamic currency */}
         <div className="flex items-end justify-between mb-2 min-h-[2rem]">
           <div>
             {medicine.discount > 0 ? (
               <div>
                 <span className="text-base font-bold text-primary-600 dark:text-primary-400">
-                  M{discountedPrice.toFixed(2)}
+                  {currencySymbol}{discountedPrice.toFixed(2)}
                 </span>
                 <span className="text-[10px] text-gray-400 line-through ml-1">
-                  M{medicine.price}
+                  {currencySymbol}{medicine.price}
                 </span>
               </div>
             ) : (
               <span className="text-base font-bold text-primary-600 dark:text-primary-400">
-                M{medicine.price}
+                {currencySymbol}{medicine.price}
               </span>
             )}
           </div>

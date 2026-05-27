@@ -12,22 +12,35 @@ const Orders = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const [orders, setOrders] = useState([]);
-  const [availableOrders, setAvailableOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
-  const [activeTab, setActiveTab] = useState('my-orders');
   const [currentOrderForAction, setCurrentOrderForAction] = useState(null);
+  const [currencySymbol, setCurrencySymbol] = useState('M');
   
   const userRole = user?.role;
+
+  // Fetch currency setting
+  useEffect(() => {
+    fetchCurrency();
+  }, []);
+
+  const fetchCurrency = async () => {
+    try {
+      const response = await api.get('/dashboard/settings');
+      if (response.data.success) {
+        const currency = response.data.data.currency || 'M';
+        setCurrencySymbol(currency);
+      }
+    } catch (error) {
+      console.error('Error fetching currency:', error);
+    }
+  };
 
   useEffect(() => {
     console.log('User role:', userRole);
     fetchOrders();
-    if (userRole === 'DELIVERY_STAFF') {
-      fetchAvailableOrders();
-    }
   }, [userRole]);
 
   const fetchOrders = async () => {
@@ -42,13 +55,11 @@ const Orders = () => {
         if (userRole === 'DELIVERY_STAFF') {
           console.log('Delivery staff data received:', data);
           
-          // Handle different response structures
+          // For delivery staff, only show assigned orders
           if (data && typeof data === 'object') {
             if (data.assigned !== undefined) {
               setOrders(data.assigned || []);
-              setAvailableOrders(data.available || []);
               console.log('Assigned orders:', data.assigned?.length);
-              console.log('Available orders from main API:', data.available?.length);
             } else if (Array.isArray(data)) {
               setOrders(data);
               console.log('Orders array length:', data.length);
@@ -70,29 +81,11 @@ const Orders = () => {
     }
   };
 
-  const fetchAvailableOrders = async () => {
-    try {
-      const response = await api.get('/orders/delivery/available');
-      console.log('Available Orders API Response:', response.data);
-      
-      if (response.data.success) {
-        const available = response.data.data || [];
-        setAvailableOrders(available);
-        console.log('Available orders set to:', available.length);
-      }
-    } catch (error) {
-      console.error('Error fetching available orders:', error);
-    }
-  };
-
   const handleStatusUpdate = async (orderId, newStatus) => {
     try {
       await api.put(`/orders/${orderId}/status`, { status: newStatus });
       toast.success(`Order status updated to ${newStatus}`);
       fetchOrders();
-      if (userRole === 'DELIVERY_STAFF') {
-        fetchAvailableOrders();
-      }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update status');
     }
@@ -107,17 +100,6 @@ const Orders = () => {
       fetchOrders();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to cancel order');
-    }
-  };
-
-  const handleSelfAssign = async (orderId) => {
-    try {
-      await api.post(`/orders/delivery/${orderId}/self-assign`);
-      toast.success('Order assigned to you successfully');
-      fetchOrders();
-      fetchAvailableOrders();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to assign order');
     }
   };
 
@@ -152,6 +134,10 @@ const Orders = () => {
     });
   };
 
+  const formatPrice = (price) => {
+    return `${currencySymbol}${parseFloat(price).toFixed(2)}`;
+  };
+
   const handleBackToShop = () => {
     navigate('/shop');
   };
@@ -174,46 +160,13 @@ const Orders = () => {
     return (userRole === 'ADMIN' || userRole === 'PHARMACIST') && orderStatus === 'READY';
   };
 
-  const canSelfAssign = (orderStatus, hasDeliveryStaff) => {
-    return userRole === 'DELIVERY_STAFF' && orderStatus === 'READY' && !hasDeliveryStaff;
-  };
-
   const getDashboardTitle = () => {
     switch(userRole) {
       case 'ADMIN': return 'All Orders';
       case 'PHARMACIST': return 'Order Management';
-      case 'DELIVERY_STAFF': return 'Delivery Dashboard';
+      case 'DELIVERY_STAFF': return 'My Assigned Deliveries';
       default: return 'My Orders';
     }
-  };
-
-  const renderDeliveryTabs = () => {
-    if (userRole !== 'DELIVERY_STAFF') return null;
-    
-    return (
-      <div className="flex gap-4 mb-6 border-b border-gray-200 dark:border-gray-700">
-        <button
-          onClick={() => setActiveTab('my-orders')}
-          className={`pb-3 px-4 font-medium transition-colors ${
-            activeTab === 'my-orders'
-              ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
-              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
-          }`}
-        >
-          My Deliveries ({orders.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('available')}
-          className={`pb-3 px-4 font-medium transition-colors ${
-            activeTab === 'available'
-              ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
-              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
-          }`}
-        >
-          Available Orders ({availableOrders.length})
-        </button>
-      </div>
-    );
   };
 
   if (loading) {
@@ -225,10 +178,7 @@ const Orders = () => {
     );
   }
 
-  const displayOrders = activeTab === 'available' ? availableOrders : orders;
-  
-  console.log('Display orders count:', displayOrders.length);
-  console.log('Active tab:', activeTab);
+  console.log('Display orders count:', orders.length);
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -247,7 +197,7 @@ const Orders = () => {
           <h1 className="text-3xl font-bold gradient-text">{getDashboardTitle()}</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
             {userRole === 'DELIVERY_STAFF' 
-              ? 'Manage your deliveries' 
+              ? 'View and manage your assigned deliveries' 
               : userRole === 'PHARMACIST'
               ? 'Process and prepare orders'
               : 'Track and manage your orders'}
@@ -256,14 +206,12 @@ const Orders = () => {
         <div className="hidden md:flex items-center gap-2">
           <Receipt className="w-5 h-5 text-gray-400" />
           <span className="text-sm text-gray-500">
-            {displayOrders.length} orders
+            {orders.length} orders
           </span>
         </div>
       </div>
       
-      {renderDeliveryTabs()}
-      
-      {displayOrders.length === 0 ? (
+      {orders.length === 0 ? (
         <div className="text-center py-16 bg-gradient-to-br from-gray-50 to-white dark:from-gray-800/50 dark:to-gray-800 rounded-2xl">
           <div className="w-32 h-32 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-600 rounded-full flex items-center justify-center mx-auto mb-6">
             {userRole === 'DELIVERY_STAFF' ? (
@@ -273,19 +221,19 @@ const Orders = () => {
             )}
           </div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            {activeTab === 'available' ? 'No available orders' : 'No orders yet'}
+            No orders found
           </h2>
           <p className="text-gray-500 dark:text-gray-400 mb-6">
-            {activeTab === 'available' 
-              ? 'Check back later for delivery opportunities'
-              : userRole === 'DELIVERY_STAFF'
-              ? 'No deliveries assigned to you yet'
-              : 'Looks like you haven\'t placed any orders'}
+            {userRole === 'DELIVERY_STAFF'
+              ? 'No deliveries assigned to you yet. Orders will appear here when assigned by Admin or Pharmacist.'
+              : userRole === 'CUSTOMER'
+              ? 'Looks like you haven\'t placed any orders'
+              : 'No orders available'}
           </p>
         </div>
       ) : (
         <div className="space-y-6">
-          {displayOrders.map((order) => (
+          {orders.map((order) => (
             <div key={order.id} className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 border border-gray-100 dark:border-gray-700">
               <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-white dark:from-gray-800/50 dark:to-gray-800">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -312,7 +260,7 @@ const Orders = () => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-bold text-primary-600">M{parseFloat(order.grandTotal).toFixed(2)}</p>
+                    <p className="text-2xl font-bold text-primary-600">{formatPrice(order.grandTotal)}</p>
                     <p className="text-xs text-gray-500 mt-1">{order.orderItems?.length || 0} items</p>
                   </div>
                 </div>
@@ -329,7 +277,7 @@ const Orders = () => {
                         <p className="text-sm font-medium text-gray-900 dark:text-white">{item.medicine?.name}</p>
                         <p className="text-xs text-gray-500">Qty: {item.quantity}</p>
                       </div>
-                      <p className="text-sm font-semibold text-primary-600">M{parseFloat(item.total).toFixed(2)}</p>
+                      <p className="text-sm font-semibold text-primary-600">{formatPrice(item.total)}</p>
                     </div>
                   ))}
                   {order.orderItems?.length > 3 && (
@@ -375,16 +323,6 @@ const Orders = () => {
                   </button>
                 )}
                 
-                {canSelfAssign(order.status, order.delivery) && (
-                  <button
-                    onClick={() => handleSelfAssign(order.id)}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-all duration-200"
-                  >
-                    <ClipboardList className="w-4 h-4" />
-                    <span>Accept Delivery</span>
-                  </button>
-                )}
-                
                 {canCancelOrder(order.status, order.userId) && (
                   <button
                     onClick={() => handleCancelOrder(order.id)}
@@ -400,7 +338,7 @@ const Orders = () => {
         </div>
       )}
       
-      {/* Modals - same as before */}
+      {/* Order Details Modal */}
       {selectedOrder && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
@@ -421,6 +359,14 @@ const Orders = () => {
                   <p className="text-xs text-gray-500">Order Date</p>
                   <p className="font-semibold">{formatDate(selectedOrder.createdAt)}</p>
                 </div>
+                <div className="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-4">
+                  <p className="text-xs text-gray-500">Total Amount</p>
+                  <p className="font-semibold text-primary-600">{formatPrice(selectedOrder.grandTotal)}</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-4">
+                  <p className="text-xs text-gray-500">Order Status</p>
+                  {getStatusBadge(selectedOrder.status)}
+                </div>
               </div>
             </div>
           </div>
@@ -434,10 +380,7 @@ const Orders = () => {
             setShowStatusModal(false);
             setCurrentOrderForAction(null);
           }}
-          onUpdate={() => {
-            fetchOrders();
-            if (userRole === 'DELIVERY_STAFF') fetchAvailableOrders();
-          }}
+          onUpdate={() => fetchOrders()}
         />
       )}
       

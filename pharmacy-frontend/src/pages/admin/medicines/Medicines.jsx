@@ -16,6 +16,9 @@ const AdminMedicines = () => {
   const [savingMedicine, setSavingMedicine] = useState(false);
   const [medicineImages, setMedicineImages] = useState([]);
   const [medicineImagePreviews, setMedicineImagePreviews] = useState([]);
+  const [existingImages, setExistingImages] = useState([]);
+  const [imagesToDelete, setImagesToDelete] = useState([]);
+  const [currencySymbol, setCurrencySymbol] = useState('M');
   const [newCategory, setNewCategory] = useState({
     name: '',
     description: '',
@@ -37,9 +40,22 @@ const AdminMedicines = () => {
   });
 
   useEffect(() => {
+    fetchCurrency();
     fetchMedicines();
     fetchCategories();
   }, [searchTerm]);
+
+  const fetchCurrency = async () => {
+    try {
+      const response = await api.get('/dashboard/settings');
+      if (response.data.success) {
+        const currency = response.data.data.currency || 'M';
+        setCurrencySymbol(currency);
+      }
+    } catch (error) {
+      console.error('Error fetching currency:', error);
+    }
+  };
 
   const fetchMedicines = async () => {
     setLoading(true);
@@ -86,9 +102,14 @@ const AdminMedicines = () => {
     }
   };
 
-  const removeMedicineImage = (index) => {
+  const removeNewMedicineImage = (index) => {
     setMedicineImages(prev => prev.filter((_, i) => i !== index));
     setMedicineImagePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const removeExistingImage = (imageId, imageUrl) => {
+    setImagesToDelete([...imagesToDelete, { id: imageId, url: imageUrl }]);
+    setExistingImages(prev => prev.filter(img => img.id !== imageId));
   };
 
   const handleCreateCategory = async (e) => {
@@ -154,23 +175,45 @@ const AdminMedicines = () => {
       if (editingMedicine) {
         await api.put(`/medicines/${editingMedicine.id}`, formData);
         medicineId = editingMedicine.id;
-        toast.success('Medicine updated');
+        
+        if (imagesToDelete.length > 0) {
+          const deletePromises = imagesToDelete.map(image => 
+            api.delete(`/medicines/images/${image.id}`)
+          );
+          await Promise.all(deletePromises);
+          toast.success(`${imagesToDelete.length} image(s) removed`);
+        }
+        
+        if (medicineImages.length > 0) {
+          const imageFormData = new FormData();
+          medicineImages.forEach(file => {
+            imageFormData.append('images', file);
+          });
+          
+          await api.post(`/medicines/${medicineId}/images`, imageFormData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          toast.success(`${medicineImages.length} new image(s) uploaded`);
+        }
+        
+        toast.success('Medicine updated successfully');
       } else {
         const response = await api.post('/medicines', formData);
         medicineId = response.data.id;
-        toast.success('Medicine created');
-      }
-      
-      if (medicineImages.length > 0) {
-        const imageFormData = new FormData();
-        medicineImages.forEach(file => {
-          imageFormData.append('images', file);
-        });
         
-        await api.post(`/medicines/${medicineId}/images`, imageFormData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
-        toast.success(`${medicineImages.length} image(s) uploaded`);
+        if (medicineImages.length > 0) {
+          const imageFormData = new FormData();
+          medicineImages.forEach(file => {
+            imageFormData.append('images', file);
+          });
+          
+          await api.post(`/medicines/${medicineId}/images`, imageFormData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          toast.success(`${medicineImages.length} image(s) uploaded`);
+        }
+        
+        toast.success('Medicine created successfully');
       }
       
       fetchMedicines();
@@ -203,9 +246,11 @@ const AdminMedicines = () => {
     });
     setMedicineImages([]);
     setMedicineImagePreviews([]);
+    setExistingImages([]);
+    setImagesToDelete([]);
   };
 
-  const handleEdit = (medicine) => {
+  const handleEdit = async (medicine) => {
     setEditingMedicine(medicine);
     setFormData({
       name: medicine.name || '',
@@ -222,8 +267,24 @@ const AdminMedicines = () => {
       prescriptionRequired: medicine.prescriptionRequired || false,
       isFeatured: medicine.isFeatured || false,
     });
+    
+    if (medicine.id) {
+      try {
+        const response = await api.get(`/medicines/${medicine.id}/images`);
+        if (response.data && response.data.images) {
+          setExistingImages(response.data.images);
+        } else {
+          setExistingImages([]);
+        }
+      } catch (error) {
+        console.error('Error fetching medicine images:', error);
+        setExistingImages([]);
+      }
+    }
+    
     setMedicineImages([]);
     setMedicineImagePreviews([]);
+    setImagesToDelete([]);
     setShowModal(true);
   };
 
@@ -277,7 +338,7 @@ const AdminMedicines = () => {
             placeholder="Search medicines by name, barcode, or description..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="input-modern pl-12 py-3"
+            className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
           />
         </div>
       </div>
@@ -318,10 +379,10 @@ const AdminMedicines = () => {
                       <Tag className="w-3 h-3" />
                       {medicine.category?.name || 'N/A'}
                     </span>
-                  </td>
+                   </td>
                   <td className="px-6 py-4">
-                    <span className="font-semibold text-primary-600">M{parseFloat(medicine.price).toFixed(2)}</span>
-                  </td>
+                    <span className="font-semibold text-primary-600">{currencySymbol}{parseFloat(medicine.price).toFixed(2)}</span>
+                   </td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
                       medicine.stock < 10 
@@ -331,7 +392,7 @@ const AdminMedicines = () => {
                       <Package className="w-3 h-3" />
                       {medicine.stock} units
                     </span>
-                  </td>
+                   </td>
                   <td className="px-6 py-4">
                     {medicine.prescriptionRequired ? (
                       <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-full text-xs font-semibold">
@@ -367,7 +428,7 @@ const AdminMedicines = () => {
         </div>
       </div>
 
-      {/* Add/Edit Medicine Modal - Modern Design */}
+      {/* Add/Edit Medicine Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto animate-scale-up shadow-2xl">
@@ -399,7 +460,7 @@ const AdminMedicines = () => {
                       type="text"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="input-modern"
+                      className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                       placeholder="Enter medicine name"
                       required
                     />
@@ -413,7 +474,7 @@ const AdminMedicines = () => {
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="input-modern"
+                    className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                     rows="3"
                     placeholder="Enter medicine description"
                   />
@@ -431,7 +492,7 @@ const AdminMedicines = () => {
                         <select
                           value={formData.categoryId}
                           onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-                          className="flex-1 input-modern"
+                          className="flex-1 px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                           required
                         >
                           <option value="">-- Select Category --</option>
@@ -459,7 +520,7 @@ const AdminMedicines = () => {
                       type="text"
                       value={formData.dosage}
                       onChange={(e) => setFormData({ ...formData, dosage: e.target.value })}
-                      className="input-modern"
+                      className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                       placeholder="e.g., 1 tablet daily"
                     />
                   </div>
@@ -471,7 +532,7 @@ const AdminMedicines = () => {
                     type="text"
                     value={formData.sideEffects}
                     onChange={(e) => setFormData({ ...formData, sideEffects: e.target.value })}
-                    className="input-modern"
+                    className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                     placeholder="e.g., Nausea, headache"
                   />
                 </div>
@@ -479,7 +540,7 @@ const AdminMedicines = () => {
                 <div className="grid grid-cols-2 gap-5">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Price (M) <span className="text-red-500">*</span>
+                      Price ({currencySymbol}) <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -488,7 +549,7 @@ const AdminMedicines = () => {
                         step="0.01"
                         value={formData.price}
                         onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                        className="input-modern pl-10"
+                        className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                         placeholder="0.00"
                         required
                       />
@@ -501,7 +562,7 @@ const AdminMedicines = () => {
                       step="0.01"
                       value={formData.discount}
                       onChange={(e) => setFormData({ ...formData, discount: e.target.value })}
-                      className="input-modern"
+                      className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                       placeholder="0"
                     />
                   </div>
@@ -516,7 +577,7 @@ const AdminMedicines = () => {
                       type="number"
                       value={formData.stock}
                       onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
-                      className="input-modern"
+                      className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                       placeholder="Quantity"
                       required
                     />
@@ -529,7 +590,7 @@ const AdminMedicines = () => {
                       type="text"
                       value={formData.batchNumber}
                       onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })}
-                      className="input-modern"
+                      className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                       placeholder="BATCH001"
                       required
                     />
@@ -545,7 +606,7 @@ const AdminMedicines = () => {
                       type="date"
                       value={formData.expiryDate}
                       onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
-                      className="input-modern"
+                      className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                       required
                     />
                   </div>
@@ -557,7 +618,7 @@ const AdminMedicines = () => {
                       type="text"
                       value={formData.barcode}
                       onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                      className="input-modern"
+                      className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                       placeholder="123456789012"
                       required
                     />
@@ -588,29 +649,63 @@ const AdminMedicines = () => {
                 {/* Medicine Images Upload */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Medicine Images</label>
+                  
+                  {existingImages.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Current Images:</p>
+                      <div className="grid grid-cols-4 gap-3">
+                        {existingImages.map((image) => (
+                          <div key={image.id} className="relative group">
+                            <img 
+                              src={image.url} 
+                              alt="Medicine" 
+                              className="h-20 w-20 object-cover rounded-xl shadow-md" 
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeExistingImage(image.id, image.url)}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {medicineImagePreviews.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">New Images:</p>
+                      <div className="grid grid-cols-4 gap-3">
+                        {medicineImagePreviews.map((preview, idx) => (
+                          <div key={`new-${idx}`} className="relative group">
+                            <img 
+                              src={preview} 
+                              alt={`Preview ${idx}`} 
+                              className="h-20 w-20 object-cover rounded-xl shadow-md" 
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeNewMedicineImage(idx)}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
                   <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl hover:border-primary-400 transition-colors duration-200">
                     <div className="space-y-2 text-center">
-                      {medicineImagePreviews.length > 0 ? (
-                        <div className="grid grid-cols-4 gap-3 mb-4">
-                          {medicineImagePreviews.map((preview, idx) => (
-                            <div key={idx} className="relative group">
-                              <img src={preview} alt={`Preview ${idx}`} className="h-20 w-20 object-cover rounded-xl shadow-md" />
-                              <button
-                                type="button"
-                                onClick={() => removeMedicineImage(idx)}
-                                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
+                      {(medicineImagePreviews.length === 0 && existingImages.length === 0) && (
                         <ImageIcon className="mx-auto h-12 w-12 text-gray-400" />
                       )}
                       <div className="flex justify-center text-sm">
                         <label className="relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-primary-600 hover:text-primary-500 transition-colors">
-                          <span>Upload images</span>
+                          <span>{existingImages.length > 0 || medicineImagePreviews.length > 0 ? 'Add more images' : 'Upload images'}</span>
                           <input
                             type="file"
                             className="sr-only"
@@ -629,7 +724,7 @@ const AdminMedicines = () => {
                   <button
                     type="submit"
                     disabled={savingMedicine}
-                    className="btn-primary flex-1 flex items-center justify-center gap-2"
+                    className="flex-1 bg-gradient-to-r from-primary-500 to-primary-600 text-white py-2.5 rounded-xl hover:from-primary-600 hover:to-primary-700 transition-all duration-200 flex items-center justify-center gap-2 font-medium shadow-md"
                   >
                     {savingMedicine ? (
                       <>
@@ -689,7 +784,7 @@ const AdminMedicines = () => {
                   type="text"
                   value={newCategory.name}
                   onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
-                  className="input-modern"
+                  className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                   placeholder="e.g., Pain Relief"
                   required
                 />
@@ -701,7 +796,7 @@ const AdminMedicines = () => {
                 <textarea
                   value={newCategory.description}
                   onChange={(e) => setNewCategory({ ...newCategory, description: e.target.value })}
-                  className="input-modern"
+                  className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                   rows="3"
                   placeholder="Category description"
                 />
@@ -710,7 +805,7 @@ const AdminMedicines = () => {
                 <button
                   type="submit"
                   disabled={creatingCategory}
-                  className="flex-1 btn-primary flex items-center justify-center gap-2"
+                  className="flex-1 bg-gradient-to-r from-primary-500 to-primary-600 text-white py-2.5 rounded-xl hover:from-primary-600 hover:to-primary-700 transition-all duration-200 flex items-center justify-center gap-2 font-medium shadow-md"
                 >
                   {creatingCategory ? (
                     <>
@@ -730,7 +825,7 @@ const AdminMedicines = () => {
                     setShowCategoryModal(false);
                     setNewCategory({ name: '', description: '' });
                   }}
-                  className="flex-1 px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition"
+                  className="flex-1 px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-all duration-200"
                 >
                   Cancel
                 </button>

@@ -13,8 +13,36 @@ const POS = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [customerInfo, setCustomerInfo] = useState({ name: '', phone: '' });
   const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [settings, setSettings] = useState({
+    vat_percentage: 15,
+    delivery_fee: 5,
+    free_delivery_min: 100,
+    currency: 'M'
+  });
   const { items, addItem, removeItem, updateQuantity, totalPrice, clearCart } = useCartStore();
   const receiptRef = useRef();
+
+  // Fetch settings on mount
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const response = await api.get('/dashboard/settings');
+      if (response.data.success) {
+        const data = response.data.data;
+        setSettings({
+          vat_percentage: parseFloat(data.vat_percentage) || 15,
+          delivery_fee: parseFloat(data.delivery_fee) || 5,
+          free_delivery_min: parseFloat(data.free_delivery_min_amount) || 100,
+          currency: data.currency || 'M'
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+    }
+  };
 
   useEffect(() => {
     if (searchTerm.length > 2) {
@@ -59,9 +87,10 @@ const POS = () => {
 
   const generateInvoice = () => {
     const doc = new jsPDF();
-    const tax = totalPrice * 0.15;
-    const deliveryFee = 5;
+    const tax = totalPrice * (settings.vat_percentage / 100);
+    const deliveryFee = totalPrice > settings.free_delivery_min ? 0 : settings.delivery_fee;
     const grandTotal = totalPrice + tax + deliveryFee;
+    const currencySymbol = settings.currency;
     
     // Header with gradient effect
     doc.setFillColor(59, 130, 246);
@@ -94,8 +123,8 @@ const POS = () => {
       const itemTotal = discountedPrice * item.quantity;
       doc.text(item.name.substring(0, 25), 20, y);
       doc.text(item.quantity.toString(), 120, y);
-      doc.text(`M${discountedPrice.toFixed(2)}`, 150, y);
-      doc.text(`M${itemTotal.toFixed(2)}`, 170, y);
+      doc.text(`${currencySymbol}${discountedPrice.toFixed(2)}`, 150, y);
+      doc.text(`${currencySymbol}${itemTotal.toFixed(2)}`, 170, y);
       y += 7;
       if (y > 270) {
         doc.addPage();
@@ -105,15 +134,15 @@ const POS = () => {
     
     doc.line(20, y, 190, y);
     y += 8;
-    doc.text(`Subtotal: M${totalPrice.toFixed(2)}`, 140, y);
+    doc.text(`Subtotal: ${currencySymbol}${totalPrice.toFixed(2)}`, 140, y);
     y += 7;
-    doc.text(`Tax (15%): M${tax.toFixed(2)}`, 140, y);
+    doc.text(`Tax (${settings.vat_percentage}%): ${currencySymbol}${tax.toFixed(2)}`, 140, y);
     y += 7;
-    doc.text(`Delivery: M${deliveryFee.toFixed(2)}`, 140, y);
+    doc.text(`Delivery: ${deliveryFee === 0 ? 'Free' : `${currencySymbol}${deliveryFee.toFixed(2)}`}`, 140, y);
     y += 10;
     doc.setFontSize(14);
     doc.setFont(undefined, 'bold');
-    doc.text(`Total: M${grandTotal.toFixed(2)}`, 140, y);
+    doc.text(`Total: ${currencySymbol}${grandTotal.toFixed(2)}`, 140, y);
     y += 15;
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
@@ -148,9 +177,10 @@ const POS = () => {
     setCustomerInfo({ name: '', phone: '' });
   };
 
-  const tax = totalPrice * 0.15;
-  const deliveryFee = 5;
+  const tax = totalPrice * (settings.vat_percentage / 100);
+  const deliveryFee = totalPrice > settings.free_delivery_min ? 0 : settings.delivery_fee;
   const grandTotal = totalPrice + tax + deliveryFee;
+  const currencySymbol = settings.currency;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -195,7 +225,7 @@ const POS = () => {
                   type="text"
                   placeholder="Enter or scan barcode..."
                   onKeyPress={handleBarcodeInput}
-                  className="input-modern w-full text-center text-lg font-mono"
+                  className="w-full px-4 py-3 text-center text-lg font-mono rounded-xl border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                   autoFocus
                 />
                 <p className="text-sm text-gray-500 mt-4 text-center">Use a barcode scanner or type the code and press Enter</p>
@@ -227,7 +257,7 @@ const POS = () => {
                     Stock: {medicine.stock}
                     <span className="mx-1">•</span>
                     <DollarSign className="w-3 h-3" />
-                    M{medicine.price}
+                    {currencySymbol}{medicine.price}
                   </p>
                 </div>
                 <button className="px-4 py-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg text-sm hover:from-primary-600 hover:to-primary-700 transition-all duration-200 shadow-md hover:shadow-lg">
@@ -275,7 +305,7 @@ const POS = () => {
                   <div key={item.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl hover:shadow-md transition-all duration-200">
                     <div className="flex-1">
                       <p className="font-semibold text-gray-900 dark:text-white text-sm">{item.name}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">M{discountedPrice.toFixed(2)} each</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{currencySymbol}{discountedPrice.toFixed(2)} each</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm">
@@ -308,20 +338,26 @@ const POS = () => {
             <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Subtotal</span>
-                <span className="font-semibold">M{totalPrice.toFixed(2)}</span>
+                <span className="font-semibold">{currencySymbol}{totalPrice.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Tax (15%)</span>
-                <span className="font-semibold">M{tax.toFixed(2)}</span>
+                <span className="text-gray-600">Tax ({settings.vat_percentage}%)</span>
+                <span className="font-semibold">{currencySymbol}{tax.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Delivery Fee</span>
-                <span className="font-semibold">M{deliveryFee.toFixed(2)}</span>
+                <span className="font-semibold">
+                  {deliveryFee === 0 ? (
+                    <span className="text-green-500">Free</span>
+                  ) : (
+                    `${currencySymbol}${deliveryFee.toFixed(2)}`
+                  )}
+                </span>
               </div>
               <div className="border-t-2 border-gray-200 dark:border-gray-700 pt-3 mt-2">
                 <div className="flex justify-between">
                   <span className="text-lg font-bold">Total</span>
-                  <span className="text-2xl font-bold text-primary-600">M{grandTotal.toFixed(2)}</span>
+                  <span className="text-2xl font-bold text-primary-600">{currencySymbol}{grandTotal.toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -385,7 +421,7 @@ const POS = () => {
                     type="text"
                     value={customerInfo.name}
                     onChange={(e) => setCustomerInfo({ ...customerInfo, name: e.target.value })}
-                    className="input-modern pl-10"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                     placeholder="Enter customer name"
                   />
                 </div>
@@ -400,7 +436,7 @@ const POS = () => {
                     type="tel"
                     value={customerInfo.phone}
                     onChange={(e) => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
-                    className="input-modern pl-10"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                     placeholder="Enter phone number"
                   />
                 </div>
@@ -408,7 +444,7 @@ const POS = () => {
               <div className="bg-gradient-to-r from-primary-50 to-secondary-50 dark:from-primary-900/20 dark:to-secondary-900/20 rounded-xl p-4">
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600 dark:text-gray-400">Total Amount</span>
-                  <span className="text-2xl font-bold text-primary-600">M{grandTotal.toFixed(2)}</span>
+                  <span className="text-2xl font-bold text-primary-600">{currencySymbol}{grandTotal.toFixed(2)}</span>
                 </div>
               </div>
               <button
@@ -437,7 +473,7 @@ const POS = () => {
               return (
                 <div key={item.id} className="flex justify-between text-xs">
                   <span>{item.name} x{item.quantity}</span>
-                  <span>M{(discountedPrice * item.quantity).toFixed(2)}</span>
+                  <span>{currencySymbol}{(discountedPrice * item.quantity).toFixed(2)}</span>
                 </div>
               );
             })}
@@ -445,19 +481,19 @@ const POS = () => {
           <div className="border-t my-3 pt-2 space-y-1">
             <div className="flex justify-between text-xs">
               <span>Subtotal:</span>
-              <span>M{totalPrice.toFixed(2)}</span>
+              <span>{currencySymbol}{totalPrice.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span>Tax (15%):</span>
-              <span>M{tax.toFixed(2)}</span>
+              <span>Tax ({settings.vat_percentage}%):</span>
+              <span>{currencySymbol}{tax.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-xs">
               <span>Delivery:</span>
-              <span>M{deliveryFee.toFixed(2)}</span>
+              <span>{deliveryFee === 0 ? 'Free' : `${currencySymbol}${deliveryFee.toFixed(2)}`}</span>
             </div>
             <div className="flex justify-between text-sm font-bold pt-2 border-t">
               <span>Total:</span>
-              <span>M{grandTotal.toFixed(2)}</span>
+              <span>{currencySymbol}{grandTotal.toFixed(2)}</span>
             </div>
           </div>
           <div className="text-center text-xs mt-4 pt-3 border-t">

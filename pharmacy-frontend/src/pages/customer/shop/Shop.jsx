@@ -17,6 +17,24 @@ const Shop = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedMedicine, setSelectedMedicine] = useState(null);
   const [viewMode, setViewMode] = useState('grid');
+  const [currencySymbol, setCurrencySymbol] = useState('M');
+
+  // Fetch currency setting
+  useEffect(() => {
+    fetchCurrencySetting();
+  }, []);
+
+  const fetchCurrencySetting = async () => {
+    try {
+      const response = await api.get('/dashboard/settings');
+      if (response.data.success) {
+        const currency = response.data.data.currency || 'M';
+        setCurrencySymbol(currency);
+      }
+    } catch (error) {
+      console.error('Error fetching currency:', error);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -233,6 +251,7 @@ const Shop = () => {
                     onAddToCart={handleAddToCart}
                     onViewDetails={handleViewDetails}
                     viewMode={viewMode}
+                    currencySymbol={currencySymbol}
                   />
                 ))}
               </div>
@@ -280,11 +299,11 @@ const Shop = () => {
                   </div>
                 )}
                 
-                {/* Price and Actions */}
+                {/* Price and Actions - Using dynamic currency */}
                 <div className="flex flex-wrap justify-between items-center gap-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                   <div>
                     <p className="text-xs text-gray-500">Price</p>
-                    <p className="text-2xl font-bold text-primary-600">M{parseFloat(selectedMedicine.price).toFixed(2)}</p>
+                    <p className="text-2xl font-bold text-primary-600">{currencySymbol}{parseFloat(selectedMedicine.price).toFixed(2)}</p>
                   </div>
                   {selectedMedicine.prescriptionRequired && (
                     <div className="px-2 py-1 bg-orange-100 dark:bg-orange-900/30 rounded-lg">

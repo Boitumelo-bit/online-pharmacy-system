@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCartStore } from '../../../stores/cartStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -11,6 +11,14 @@ const Checkout = () => {
   const { items, totalPrice, clearCart } = useCartStore();
   const { user } = useAuthStore();
   
+  const [settings, setSettings] = useState({
+    vat_percentage: 15,
+    delivery_fee: 5,
+    free_delivery_min: 100,
+    currency: 'M'
+  });
+  const [loadingSettings, setLoadingSettings] = useState(true);
+  
   const [formData, setFormData] = useState({
     fullName: user?.fullName || '',
     phone: user?.phone || '',
@@ -22,9 +30,35 @@ const Checkout = () => {
   const [paymentMethod, setPaymentMethod] = useState('CASH_ON_DELIVERY');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const tax = totalPrice * 0.15;
-  const deliveryFee = totalPrice > 100 ? 0 : 5;
+  // Fetch settings on component mount
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const response = await api.get('/dashboard/settings');
+      if (response.data.success) {
+        const data = response.data.data;
+        setSettings({
+          vat_percentage: parseFloat(data.vat_percentage) || 15,
+          delivery_fee: parseFloat(data.delivery_fee) || 5,
+          free_delivery_min: parseFloat(data.free_delivery_min_amount) || 100,
+          currency: data.currency || 'M'
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+    } finally {
+      setLoadingSettings(false);
+    }
+  };
+
+  // Calculate totals using dynamic settings
+  const tax = totalPrice * (settings.vat_percentage / 100);
+  const deliveryFee = totalPrice > settings.free_delivery_min ? 0 : settings.delivery_fee;
   const grandTotal = totalPrice + tax + deliveryFee;
+  const currencySymbol = settings.currency;
 
   const handleChange = (e) => {
     setFormData({
@@ -76,9 +110,7 @@ const Checkout = () => {
       
       if (orderResponse.data.success) {
         toast.success('Order placed successfully!');
-        // Clear cart
         clearCart();
-        // Navigate to orders page
         navigate('/orders');
       } else {
         toast.error('Failed to place order');
@@ -106,6 +138,14 @@ const Checkout = () => {
           <ShoppingBag className="w-4 h-4" />
           <span>Continue Shopping</span>
         </button>
+      </div>
+    );
+  }
+
+  if (loadingSettings) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
       </div>
     );
   }
@@ -312,21 +352,21 @@ const Checkout = () => {
                       <p className="font-medium text-gray-900 dark:text-white text-sm">{item.name}</p>
                       <p className="text-xs text-gray-500">Qty: {item.quantity}</p>
                     </div>
-                    <span className="font-semibold text-primary-600">M{(discountedPrice * item.quantity).toFixed(2)}</span>
+                    <span className="font-semibold text-primary-600">{currencySymbol}{(discountedPrice * item.quantity).toFixed(2)}</span>
                   </div>
                 );
               })}
             </div>
             
-            {/* Totals */}
+            {/* Totals - Using dynamic values */}
             <div className="space-y-3 mb-5 pt-3 border-t border-gray-200 dark:border-gray-700">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
-                <span className="font-medium">M{totalPrice.toFixed(2)}</span>
+                <span className="font-medium">{currencySymbol}{totalPrice.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600 dark:text-gray-400">Tax (15%)</span>
-                <span className="font-medium">M{tax.toFixed(2)}</span>
+                <span className="text-gray-600 dark:text-gray-400">Tax ({settings.vat_percentage}%)</span>
+                <span className="font-medium">{currencySymbol}{tax.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600 dark:text-gray-400">Delivery Fee</span>
@@ -334,11 +374,11 @@ const Checkout = () => {
                   {deliveryFee === 0 ? (
                     <span className="text-green-500">Free</span>
                   ) : (
-                    `M${deliveryFee.toFixed(2)}`
+                    `${currencySymbol}${deliveryFee.toFixed(2)}`
                   )}
                 </span>
               </div>
-              {totalPrice > 100 && (
+              {totalPrice > settings.free_delivery_min && (
                 <div className="flex justify-end">
                   <span className="text-xs text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-full">
                     🎉 Free delivery applied!
@@ -349,7 +389,7 @@ const Checkout = () => {
                 <div className="flex justify-between">
                   <span className="text-lg font-bold text-gray-900 dark:text-white">Total</span>
                   <span className="text-2xl font-bold text-primary-600">
-                    M{grandTotal.toFixed(2)}
+                    {currencySymbol}{grandTotal.toFixed(2)}
                   </span>
                 </div>
               </div>

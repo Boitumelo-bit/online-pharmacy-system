@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../../stores/authStore';
-import { Mail, Lock, LogIn, Eye, EyeOff, Pill, Heart, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, LogIn, Eye, EyeOff, Pill, ArrowLeft, Sparkles, Shield, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../../services/api';
 
@@ -31,7 +31,6 @@ const Login = () => {
     e.preventDefault();
     const result = await login(email, password);
     if (result.success) {
-      // Handle "Remember Me" functionality
       if (rememberMe) {
         localStorage.setItem('rememberedEmail', email);
         localStorage.setItem('rememberMe', 'true');
@@ -40,7 +39,11 @@ const Login = () => {
         localStorage.removeItem('rememberMe');
       }
       toast.success('Login successful!');
-      navigate('/dashboard');
+      
+      // Small delay to ensure state is updated
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 100);
     } else {
       toast.error(result.error);
     }
@@ -88,11 +91,11 @@ const Login = () => {
   // Forgot Password Modal
   if (showForgotPassword) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-r from-primary-500 to-primary-600 rounded-2xl shadow-xl mb-4">
-              <Pill className="w-10 h-10 text-white" />
+              <Shield className="w-10 h-10 text-white" />
             </div>
             <h2 className="text-3xl font-bold gradient-text">Reset Password</h2>
             <p className="mt-2 text-gray-600 dark:text-gray-400">
@@ -100,21 +103,21 @@ const Login = () => {
             </p>
           </div>
 
-          <div className="glass-morphism rounded-2xl shadow-2xl p-8 backdrop-blur-xl">
+          <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
             {!resetSent ? (
               <form onSubmit={handleForgotPassword}>
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Email Address
                     </label>
                     <div className="relative group">
-                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-primary-500 w-5 h-5 transition-colors duration-200" />
+                      <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-primary-500 w-5 h-5 transition-colors duration-200" />
                       <input
                         type="email"
                         value={resetEmail}
                         onChange={(e) => setResetEmail(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                        className="w-full pl-12 pr-4 py-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
                         placeholder="Enter your email address"
                         required
                         autoFocus
@@ -128,13 +131,13 @@ const Login = () => {
                   <button
                     type="submit"
                     disabled={resetLoading}
-                    className="btn-primary w-full flex items-center justify-center gap-2 py-3 text-base shadow-lg hover:shadow-xl transition-all duration-200"
+                    className="w-full bg-gradient-to-r from-primary-500 to-primary-600 text-white py-3.5 rounded-xl font-semibold hover:from-primary-600 hover:to-primary-700 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     {resetLoading ? (
-                      <div className="flex items-center gap-2">
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
                         <span>Sending...</span>
-                      </div>
+                      </>
                     ) : (
                       <>
                         <Mail className="w-5 h-5" />
@@ -155,8 +158,8 @@ const Login = () => {
               </form>
             ) : (
               <div className="text-center space-y-4">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                  <Mail className="w-8 h-8 text-green-600" />
+                <div className="w-20 h-20 bg-gradient-to-r from-green-100 to-green-200 dark:from-green-900/30 dark:to-green-800/30 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle className="w-10 h-10 text-green-600" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
                   Check Your Email
@@ -164,7 +167,9 @@ const Login = () => {
                 <p className="text-gray-600 dark:text-gray-400">
                   We've sent a password reset link to:
                 </p>
-                <p className="font-medium text-primary-600">{resetEmail}</p>
+                <p className="font-medium text-primary-600 bg-primary-50 dark:bg-primary-900/20 px-4 py-2 rounded-lg inline-block">
+                  {resetEmail}
+                </p>
                 <p className="text-sm text-gray-500">
                   Click the link in the email to reset your password. The link will expire in 1 hour.
                 </p>
@@ -197,33 +202,39 @@ const Login = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+      {/* Animated Background Elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary-100 rounded-full blur-3xl opacity-30 animate-pulse"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-secondary-100 rounded-full blur-3xl opacity-30 animate-pulse delay-1000"></div>
+      </div>
+
+      <div className="max-w-md w-full relative z-10">
         {/* Logo & Brand Section */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-r from-primary-500 to-primary-600 rounded-2xl shadow-xl mb-4 animate-float">
-            <Pill className="w-10 h-10 text-white" />
+          <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-primary-500 via-primary-600 to-primary-700 rounded-2xl shadow-2xl mb-6 animate-float">
+            <Pill className="w-12 h-12 text-white" />
           </div>
-          <h2 className="text-3xl font-bold gradient-text">Welcome Back</h2>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">Sign in to your account</p>
+          <h2 className="text-4xl font-bold gradient-text">Welcome Back</h2>
+          <p className="mt-2 text-gray-500 dark:text-gray-400">Sign in to continue to your account</p>
         </div>
         
         {/* Login Card */}
-        <div className="glass-morphism rounded-2xl shadow-2xl p-8 backdrop-blur-xl">
-          <form className="mt-4 space-y-6" onSubmit={handleSubmit}>
-            <div className="space-y-4">
+        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
+          <form className="mt-2 space-y-6" onSubmit={handleSubmit}>
+            <div className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Email Address
                 </label>
                 <div className="relative group">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-primary-500 w-5 h-5 transition-colors duration-200" />
+                  <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-primary-500 w-5 h-5 transition-colors duration-200" />
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 hover:border-primary-300"
-                    placeholder="admin@pharmacy.com"
+                    className="w-full pl-12 pr-4 py-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                    placeholder="Enter your email"
                     required
                   />
                 </div>
@@ -234,19 +245,19 @@ const Login = () => {
                   Password
                 </label>
                 <div className="relative group">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-primary-500 w-5 h-5 transition-colors duration-200" />
+                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-primary-500 w-5 h-5 transition-colors duration-200" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-12 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 hover:border-primary-300"
-                    placeholder="••••••••"
+                    className="w-full pl-12 pr-12 py-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                    placeholder="Enter your password"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-primary-500 transition-colors duration-200"
+                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-primary-500 transition-colors duration-200"
                   >
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
@@ -278,13 +289,13 @@ const Login = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="btn-primary w-full flex items-center justify-center gap-2 py-3 text-base shadow-lg hover:shadow-xl transition-all duration-200"
+              className="w-full bg-gradient-to-r from-primary-500 to-primary-600 text-white py-3.5 rounded-xl font-semibold hover:from-primary-600 hover:to-primary-700 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transform hover:scale-[1.02] active:scale-[0.98]"
             >
               {isLoading ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
                   <span>Signing in...</span>
-                </div>
+                </>
               ) : (
                 <>
                   <LogIn className="w-5 h-5" />
@@ -293,24 +304,31 @@ const Login = () => {
               )}
             </button>
 
-            <div className="text-center">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Don't have an account?{' '}
-                <Link to="/register" className="text-primary-600 hover:text-primary-500 font-medium transition-colors">
-                  Create an account
-                </Link>
-              </p>
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-4 bg-white dark:bg-gray-800 text-gray-500">New to our pharmacy?</span>
+              </div>
             </div>
 
-            
-            <div className="mt-6 p-4 bg-gradient-to-r from-primary-50 to-secondary-50 dark:from-primary-900/20 dark:to-secondary-900/20 rounded-xl border border-primary-100 dark:border-primary-800">
-              <div className="flex items-center gap-2 mb-2">
-  
-              </div>
-    
+            <div className="text-center">
+              <Link 
+                to="/register" 
+                className="inline-flex items-center gap-2 text-primary-600 hover:text-primary-700 font-medium transition-colors group"
+              >
+                <Sparkles className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+                <span>Create an account</span>
+              </Link>
             </div>
           </form>
         </div>
+
+        {/* Footer */}
+        <p className="text-center text-xs text-gray-400 mt-8">
+          Secure Login • SSL Encrypted
+        </p>
       </div>
     </div>
   );

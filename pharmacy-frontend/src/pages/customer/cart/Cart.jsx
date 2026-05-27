@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCartStore } from '../../../stores/cartStore';
 import { Trash2, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, AlertCircle, CreditCard, Truck } from 'lucide-react';
@@ -8,8 +8,27 @@ import api from '../../../services/api';
 const Cart = () => {
   const navigate = useNavigate();
   const { items, totalItems, totalPrice, updateQuantity, removeItem, clearCart } = useCartStore();
+  const [currencySymbol, setCurrencySymbol] = useState('M');
+
+  // Fetch currency setting on mount
+  useEffect(() => {
+    fetchCurrency();
+  }, []);
+
+  const fetchCurrency = async () => {
+    try {
+      const response = await api.get('/dashboard/settings');
+      if (response.data.success) {
+        const currency = response.data.data.currency || 'M';
+        setCurrencySymbol(currency);
+      }
+    } catch (error) {
+      console.error('Error fetching currency:', error);
+    }
+  };
 
   const handleUpdateQuantity = (id, quantity) => {
+    if (quantity < 1) return;
     updateQuantity(id, quantity);
     toast.success('Cart updated');
   };
@@ -180,10 +199,10 @@ const Cart = () => {
                         </div>
                         <div className="text-right">
                           {item.discount > 0 && (
-                            <p className="text-sm text-gray-400 line-through">M{item.price.toFixed(2)}</p>
+                            <p className="text-sm text-gray-400 line-through">{currencySymbol}{item.price.toFixed(2)}</p>
                           )}
-                          <p className="text-xl font-bold text-primary-600">M{discountedPrice.toFixed(2)}</p>
-                          <p className="text-xs text-gray-500">Total: M{itemTotal.toFixed(2)}</p>
+                          <p className="text-xl font-bold text-primary-600">{currencySymbol}{discountedPrice.toFixed(2)}</p>
+                          <p className="text-xs text-gray-500">Total: {currencySymbol}{itemTotal.toFixed(2)}</p>
                         </div>
                       </div>
                       
@@ -243,11 +262,11 @@ const Cart = () => {
             <div className="space-y-3 mb-5">
               <div className="flex justify-between py-2">
                 <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
-                <span className="font-semibold">M{totalPrice.toFixed(2)}</span>
+                <span className="font-semibold">{currencySymbol}{totalPrice.toFixed(2)}</span>
               </div>
               <div className="flex justify-between py-2 border-t border-gray-100 dark:border-gray-700">
                 <span className="text-gray-600 dark:text-gray-400">Tax (15%)</span>
-                <span className="font-semibold">M{tax.toFixed(2)}</span>
+                <span className="font-semibold">{currencySymbol}{tax.toFixed(2)}</span>
               </div>
               <div className="flex justify-between py-2 border-t border-gray-100 dark:border-gray-700">
                 <span className="text-gray-600 dark:text-gray-400">Delivery Fee</span>
@@ -255,14 +274,14 @@ const Cart = () => {
                   {deliveryFee === 0 ? (
                     <span className="text-green-500">Free</span>
                   ) : (
-                    `M${deliveryFee.toFixed(2)}`
+                    `${currencySymbol}${deliveryFee.toFixed(2)}`
                   )}
                 </span>
               </div>
               {totalPrice > 100 && (
                 <div className="flex justify-end">
                   <span className="text-xs text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-full">
-                    🎉 Free delivery on orders over M100!
+                    🎉 Free delivery on orders over {currencySymbol}100!
                   </span>
                 </div>
               )}
@@ -270,7 +289,7 @@ const Cart = () => {
                 <div className="flex justify-between">
                   <span className="text-lg font-bold text-gray-900 dark:text-white">Total</span>
                   <span className="text-2xl font-bold text-primary-600">
-                    M{grandTotal.toFixed(2)}
+                    {currencySymbol}{grandTotal.toFixed(2)}
                   </span>
                 </div>
               </div>

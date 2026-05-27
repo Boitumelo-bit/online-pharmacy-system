@@ -123,6 +123,7 @@ const Profile = () => {
     }
   };
 
+  // FIXED: Updated handleDeleteAddress to show proper error message from backend
   const handleDeleteAddress = async (id) => {
     if (window.confirm('Are you sure you want to delete this address?')) {
       try {
@@ -130,7 +131,9 @@ const Profile = () => {
         toast.success('Address deleted successfully!');
         fetchAddresses();
       } catch (error) {
-        toast.error('Failed to delete address');
+        // Show the specific error message from backend
+        const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to delete address';
+        toast.error(errorMessage);
       }
     }
   };
@@ -160,7 +163,7 @@ const Profile = () => {
     setShowAddressModal(true);
   };
 
-  // NEW: Handle profile image upload
+  // Handle profile image upload
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;

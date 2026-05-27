@@ -1,4 +1,3 @@
-// frontend/src/components/orders/DeliveryAssignmentModal.jsx
 import React, { useState, useEffect } from 'react';
 import { X, UserCheck, Truck, Phone, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -34,6 +33,12 @@ const DeliveryAssignmentModal = ({ order, onClose, onAssign }) => {
       return;
     }
     
+    // Check if order status is READY before assigning
+    if (order.status !== 'READY') {
+      toast.error('Order must be READY before assigning delivery');
+      return;
+    }
+    
     setLoading(true);
     try {
       await api.post(`/orders/${order.id}/assign-delivery`, {
@@ -66,6 +71,19 @@ const DeliveryAssignmentModal = ({ order, onClose, onAssign }) => {
           <div className="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-4">
             <p className="text-sm text-gray-500">Order</p>
             <p className="font-semibold">{order.orderNumber}</p>
+            <p className="text-sm text-gray-500 mt-2">Current Status</p>
+            <p className={`font-medium ${
+              order.status === 'READY' 
+                ? 'text-green-600 dark:text-green-400' 
+                : 'text-yellow-600 dark:text-yellow-400'
+            }`}>
+              {order.status}
+            </p>
+            {order.status !== 'READY' && (
+              <p className="text-xs text-red-500 mt-2">
+                Note: Order must be READY before assigning delivery. Current status: {order.status}
+              </p>
+            )}
             <p className="text-sm text-gray-500 mt-2">Customer</p>
             <p className="font-medium">{order.user?.fullName}</p>
           </div>
@@ -125,8 +143,12 @@ const DeliveryAssignmentModal = ({ order, onClose, onAssign }) => {
             </button>
             <button
               onClick={handleAssign}
-              disabled={loading || !selectedStaff || deliveryStaff.length === 0}
-              className="flex-1 px-4 py-2 bg-green-500 text-white rounded-xl hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              disabled={loading || !selectedStaff || deliveryStaff.length === 0 || order.status !== 'READY'}
+              className={`flex-1 px-4 py-2 rounded-xl transition-colors ${
+                order.status === 'READY'
+                  ? 'bg-green-500 text-white hover:bg-green-600'
+                  : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+              }`}
             >
               {loading ? 'Assigning...' : 'Assign Delivery'}
             </button>

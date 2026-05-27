@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { useCartStore } from '../stores/cartStore';
 import { 
   Package, ShoppingCart, Users, LogOut, Menu, X, 
   Home, ShoppingBag, ClipboardList, UserCircle, FileText, 
@@ -49,17 +50,52 @@ const formatCurrency = (value) => {
 
 const Dashboard = () => {
   const { user, logout, updateUser } = useAuthStore();
+  const { totalItems } = useCartStore();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(user);
+  const [cartItemCount, setCartItemCount] = useState(0);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   // Update currentUser when user changes from store
   useEffect(() => {
     setCurrentUser(user);
   }, [user]);
+
+  // Update cart count when cart changes
+  useEffect(() => {
+    setCartItemCount(totalItems);
+  }, [totalItems]);
+
+  // Fetch notification count and listen for new notifications
+  useEffect(() => {
+    fetchUnreadNotificationCount();
+    
+    // Listen for new notifications to update count
+    const handleNewNotification = () => {
+      fetchUnreadNotificationCount();
+    };
+    
+    window.addEventListener('new-notification', handleNewNotification);
+    
+    return () => {
+      window.removeEventListener('new-notification', handleNewNotification);
+    };
+  }, []);
+
+  const fetchUnreadNotificationCount = async () => {
+    try {
+      const response = await api.get('/notifications/unread-count');
+      if (response.data.success) {
+        setNotificationCount(response.data.count || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching notification count:', error);
+    }
+  };
 
   // Determine active page from current route
   const getActivePageFromPath = () => {
@@ -259,6 +295,18 @@ useSocketNotifications();
     const role = currentUser?.role;
     const data = dashboardData;
 
+    // ADDED: Check if user is loading
+    if (!currentUser) {
+      return (
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+            <p className="text-gray-500">Loading dashboard...</p>
+          </div>
+        </div>
+      );
+    }
+
     // ADMIN DASHBOARD - Consistent styling with primary color
     if (role === 'ADMIN') {
       return (
@@ -427,7 +475,7 @@ useSocketNotifications();
       );
     }
 
-    // DELIVERY STAFF DASHBOARD - Consistent styling with primary color
+    // DELIVERY STAFF DASHBOARD - FIXED (removed Available Pickups and Available Orders)
     if (role === 'DELIVERY_STAFF') {
       return (
         <div className="space-y-6">
@@ -435,19 +483,17 @@ useSocketNotifications();
             <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32"></div>
             <div className="relative z-10">
               <h2 className="text-3xl font-bold text-white mb-2">Welcome back, {currentUser?.fullName?.split(' ')[0]}!</h2>
-              <p className="text-primary-100">Ready for deliveries? Check your assigned orders below.</p>
+              <p className="text-primary-100">Here are your assigned deliveries.</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <StatCard title="Assigned Orders" value={data?.stats?.assignedOrders || 0} icon={Truck} />
             <StatCard title="Completed" value={data?.stats?.completedDeliveries || 0} icon={CheckCircle} />
-            <StatCard title="Available Pickups" value={data?.stats?.availableOrders || 0} icon={Package} />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-1 gap-5">
             <QuickActionCard title="My Deliveries" icon={Truck} onClick={() => handleNavigation('my-deliveries', '/my-deliveries')} description="View and manage your assigned deliveries" />
-            <QuickActionCard title="Available Orders" icon={Package} onClick={() => handleNavigation('my-deliveries', '/my-deliveries')} description="Accept new delivery requests" />
           </div>
         </div>
       );
@@ -500,6 +546,22 @@ useSocketNotifications();
             </div>
             
             <div className="flex items-center gap-4">
+              {/* Cart Button - Only show for CUSTOMER role */}
+              {currentUser?.role === 'CUSTOMER' && (
+                <button 
+                  onClick={() => handleNavigation('cart', '/cart')}
+                  className="relative p-2.5 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
+                >
+                  <ShoppingCart className="w-5 h-5" />
+                  {cartItemCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] bg-red-500 text-white text-xs rounded-full flex items-center justify-center px-1.5 shadow-md">
+                      {cartItemCount > 99 ? '99+' : cartItemCount}
+                    </span>
+                  )}
+                </button>
+              )}
+              
+              {/* Notification Center with badge */}
               <NotificationCenter />
               
               <div className="hidden md:flex items-center gap-3">

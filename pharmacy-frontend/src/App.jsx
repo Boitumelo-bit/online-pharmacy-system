@@ -31,15 +31,32 @@ const LoadingSpinner = () => (
   </div>
 );
 
+// FIXED: ProtectedRoute checks both store and localStorage
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
-  return isAuthenticated ? children : <Navigate to="/login" />;
+  const token = localStorage.getItem('token');
+  
+  // Check both store state and localStorage
+  if (!isAuthenticated && !token) {
+    return <Navigate to="/login" />;
+  }
+  return children;
 };
 
 function App() {
   // Initialize socket connection when app loads
   useEffect(() => {
     initializeSocket();
+    
+    // Restore auth state from localStorage on app load
+    const restoreAuth = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        const { fetchCurrentUser } = useAuthStore.getState();
+        await fetchCurrentUser();
+      }
+    };
+    restoreAuth();
   }, []);
 
   return (
