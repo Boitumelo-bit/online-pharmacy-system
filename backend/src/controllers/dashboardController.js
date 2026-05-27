@@ -13,7 +13,7 @@ const getDashboardStats = async (req, res) => {
     const settingsMap = {};
     systemSettings.forEach(setting => {
       try {
-        settingsMap[setting.key] = JSON.parse(setting.value);
+        settingsMap[setting.key] = setting.value;
       } catch (e) {
         settingsMap[setting.key] = setting.value;
       }
@@ -21,17 +21,14 @@ const getDashboardStats = async (req, res) => {
 
     // ROLE: ADMIN - Full system access
     if (userRole === 'ADMIN') {
-      // Get total medicines
       const totalMedicines = await prisma.medicine.count({
         where: { isActive: true }
       });
 
-      // Get total categories
       const totalCategories = await prisma.category.count({
         where: { isActive: true }
       });
 
-      // Get user statistics
       const totalCustomers = await prisma.user.count({
         where: { role: 'CUSTOMER' }
       });
@@ -42,7 +39,6 @@ const getDashboardStats = async (req, res) => {
         where: { role: 'DELIVERY_STAFF' }
       });
 
-      // Get low stock medicines (stock < 10)
       const lowStockMedicines = await prisma.medicine.findMany({
         where: {
           stock: { lt: 10 },
@@ -59,7 +55,6 @@ const getDashboardStats = async (req, res) => {
         take: 10
       });
 
-      // Get expiring medicines (within 30 days)
       const thirtyDaysFromNow = new Date();
       thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
       
@@ -79,7 +74,6 @@ const getDashboardStats = async (req, res) => {
         take: 10
       });
 
-      // Get recent orders
       const recentOrders = await prisma.order.findMany({
         include: {
           user: {
@@ -90,7 +84,6 @@ const getDashboardStats = async (req, res) => {
         take: 10
       });
 
-      // Get revenue stats
       const totalRevenue = await prisma.order.aggregate({
         where: { status: 'DELIVERED' },
         _sum: { grandTotal: true }
@@ -129,7 +122,6 @@ const getDashboardStats = async (req, res) => {
     
     // ROLE: CUSTOMER - Personal dashboard
     else if (userRole === 'CUSTOMER') {
-      // Get customer's recent orders
       const recentOrders = await prisma.order.findMany({
         where: { userId },
         include: {
@@ -146,7 +138,6 @@ const getDashboardStats = async (req, res) => {
         take: 5
       });
 
-      // Get order statistics
       const totalOrders = await prisma.order.count({ where: { userId } });
       const deliveredOrders = await prisma.order.count({
         where: { userId, status: 'DELIVERED' }
@@ -155,7 +146,6 @@ const getDashboardStats = async (req, res) => {
         where: { userId, status: { in: ['PENDING', 'APPROVED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY'] } }
       });
 
-      // Get total spent
       const totalSpent = await prisma.order.aggregate({
         where: { userId, status: 'DELIVERED' },
         _sum: { grandTotal: true }
@@ -176,7 +166,6 @@ const getDashboardStats = async (req, res) => {
     
     // ROLE: PHARMACIST - Pharmacy operations
     else if (userRole === 'PHARMACIST') {
-      // Get pending prescriptions
       const pendingPrescriptions = await prisma.prescription.findMany({
         where: { status: 'PENDING' },
         include: {
@@ -188,7 +177,6 @@ const getDashboardStats = async (req, res) => {
         take: 10
       });
 
-      // Get today's orders
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
@@ -208,7 +196,6 @@ const getDashboardStats = async (req, res) => {
         take: 20
       });
 
-      // Get low stock medicines
       const lowStockMedicines = await prisma.medicine.findMany({
         where: {
           stock: { lt: 10 },
@@ -218,7 +205,6 @@ const getDashboardStats = async (req, res) => {
         take: 10
       });
 
-      // Get orders ready for pickup
       const readyOrders = await prisma.order.count({
         where: { status: 'READY' }
       });
@@ -241,7 +227,6 @@ const getDashboardStats = async (req, res) => {
     // ROLE: DELIVERY_STAFF - Delivery management
     else if (userRole === 'DELIVERY_STAFF') {
       try {
-        // Get orders assigned to this delivery person
         const assignedOrders = await prisma.order.findMany({
           where: {
             delivery: {
@@ -257,7 +242,6 @@ const getDashboardStats = async (req, res) => {
           take: 10
         });
 
-        // Get delivery statistics
         const completedDeliveries = await prisma.delivery.count({
           where: {
             deliveryStaffId: userId,
@@ -316,13 +300,39 @@ const getSystemSettings = async (req, res) => {
   try {
     const settings = await prisma.setting.findMany();
     const settingsMap = {};
+    
+    // Default values
+    const defaults = {
+      pharmacy_name: 'Pharmacy POS System',
+      phone: '+266 1234 5678',
+      email: 'info@pharmacy.com',
+      address: 'Maseru, Lesotho',
+      currency: 'M',
+      vat_percentage: 15,
+      delivery_fee: 5,
+      free_delivery_min_amount: 100,
+      business_hours: 'Mon-Fri: 8am-8pm, Sat: 9am-6pm, Sun: Closed',
+      facebook: '',
+      twitter: '',
+      instagram: '',
+      website: '',
+    };
+    
+    // Start with defaults
+    Object.assign(settingsMap, defaults);
+    
+    // Override with database values
     settings.forEach(setting => {
-      try {
-        settingsMap[setting.key] = JSON.parse(setting.value);
-      } catch (e) {
-        settingsMap[setting.key] = setting.value;
+      let value = setting.value;
+      
+      // Map database keys to frontend keys
+      if (setting.key === 'free_delivery_min_amount') {
+        settingsMap.free_delivery_min = value;
+      } else {
+        settingsMap[setting.key] = value;
       }
     });
+    
     res.json({ success: true, data: settingsMap });
   } catch (error) {
     console.error('Settings error:', error);
@@ -335,47 +345,65 @@ const updateSystemSetting = async (req, res) => {
   try {
     const { key, value } = req.body;
     
+    console.log('=== UPDATE SYSTEM SETTING ===');
+    console.log('Received key:', key);
+    console.log('Received value:', value);
+    
     if (!key) {
       return res.status(400).json({ success: false, message: 'Setting key is required' });
     }
     
-    let type = 'STRING';
-    let parsedValue = value;
-    
-    if (typeof value === 'number' || !isNaN(parseFloat(value))) {
-      type = 'NUMBER';
-      parsedValue = parseFloat(value);
-    } else if (typeof value === 'boolean') {
-      type = 'BOOLEAN';
+    // Handle special key mapping from frontend to database
+    let dbKey = key;
+    if (key === 'free_delivery_min') {
+      dbKey = 'free_delivery_min_amount';
+      console.log('Mapped key to:', dbKey);
     }
     
+    // Parse the value based on type
+    let parsedValue = value;
+    let type = 'STRING';
+    
+    // Check if it's a number
+    if (!isNaN(parseFloat(value)) && isFinite(value)) {
+      type = 'NUMBER';
+      parsedValue = parseFloat(value);
+    } 
+    // Check if it's a boolean
+    else if (value === 'true' || value === 'false') {
+      type = 'BOOLEAN';
+      parsedValue = value === 'true';
+    }
+    
+    // Determine group based on key
     let group = 'GENERAL';
-    if (key.includes('facebook') || key.includes('twitter') || key.includes('instagram') || key.includes('website') || key.includes('social')) {
+    if (dbKey.includes('facebook') || dbKey.includes('twitter') || dbKey.includes('instagram') || dbKey.includes('website')) {
       group = 'SOCIAL';
-    } else if (key.includes('delivery') || key.includes('free_delivery')) {
+    } else if (dbKey.includes('delivery') || dbKey.includes('free_delivery')) {
       group = 'DELIVERY';
-    } else if (key.includes('vat') || key.includes('currency') || key.includes('tax')) {
+    } else if (dbKey.includes('vat') || dbKey.includes('currency') || dbKey.includes('tax')) {
       group = 'FINANCIAL';
-    } else if (key.includes('hours') || key.includes('schedule')) {
+    } else if (dbKey.includes('hours') || dbKey.includes('schedule')) {
       group = 'OPERATIONS';
     }
     
+    // Upsert the setting
     const setting = await prisma.setting.upsert({
-      where: { key },
+      where: { key: dbKey },
       update: { 
-        value: JSON.stringify(parsedValue),
+        value: parsedValue,
         type,
         group
       },
       create: { 
-        key, 
-        value: JSON.stringify(parsedValue), 
+        key: dbKey, 
+        value: parsedValue,
         type,
         group
       }
     });
     
-    console.log(`Setting ${key} updated to:`, parsedValue);
+    console.log(`✅ Setting ${dbKey} saved successfully:`, parsedValue);
     
     res.json({ 
       success: true, 

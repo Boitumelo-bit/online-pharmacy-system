@@ -16,7 +16,10 @@ const {
   changePassword,
   forgotPassword,
   resetPassword,
-  uploadAvatar
+  uploadAvatar,
+  deleteAvatar,
+  verifyOTP,
+  resendOTP
 } = require('../controllers/authController');
 
 // Configure multer for file upload
@@ -53,12 +56,15 @@ router.post('/register', register);
 router.post('/login', login);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
+router.post('/verify-otp', verifyOTP);
+router.post('/resend-otp', resendOTP);
 
 // ==================== PROTECTED ROUTES ====================
 router.get('/me', verifyToken, getMe);
 router.put('/update-profile', verifyToken, updateProfile);
 router.put('/change-password', verifyToken, changePassword);
 router.post('/upload-avatar', verifyToken, upload.single('avatar'), uploadAvatar);
+router.delete('/delete-avatar', verifyToken, deleteAvatar);
 
 // ==================== ADMIN ONLY ROUTES ====================
 router.get('/admin/users', verifyToken, authorize('ADMIN'), getAllUsers);

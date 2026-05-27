@@ -34,5 +34,6 @@ router.delete('/:id', verifyToken, authorize('ADMIN'), medicineController.delete
 router.post('/:id/images', verifyToken, authorize('ADMIN'), upload.array('images', 5), medicineController.uploadImages);
 router.put('/images/:imageId/primary', verifyToken, authorize('ADMIN'), medicineController.setPrimaryImage);
 router.delete('/images/:imageId', verifyToken, authorize('ADMIN'), medicineController.deleteMedicineImage);
+router.get('/:id/images', verifyToken, authorize('ADMIN'), medicineController.getMedicineImages);
 
 module.exports = router;

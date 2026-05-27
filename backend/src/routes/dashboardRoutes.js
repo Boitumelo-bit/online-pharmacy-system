@@ -1,3 +1,4 @@
+
 const express = require('express');
 const router = express.Router();
 const { verifyToken, authorize } = require('../middleware/auth');
@@ -9,7 +10,8 @@ router.get('/stats', verifyToken, authorize('ADMIN', 'PHARMACIST', 'CUSTOMER', '
 // System settings - All authenticated users can view
 router.get('/settings', verifyToken, getSystemSettings);
 
-// Admin only - Update system settings
+// Admin only - Update system settings (support both PUT and POST)
 router.put('/settings', verifyToken, authorize('ADMIN'), updateSystemSetting);
+router.post('/settings', verifyToken, authorize('ADMIN'), updateSystemSetting);
 
 module.exports = router;

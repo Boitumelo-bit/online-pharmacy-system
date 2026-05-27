@@ -1,5 +1,139 @@
 const prisma = require('../config/prisma');
 const { sendNotification } = require('../sockets/socketHandler');
+const fetch = require('node-fetch');
+
+// Helper function to send delivery email via Brevo
+const sendDeliveryEmail = async (order, customer, status, location, deliveryStaff) => {
+  try {
+    const statusMessages = {
+      'ASSIGNED': {
+        title: '📦 Delivery Assigned',
+        message: `A delivery staff has been assigned to your order ${order.orderNumber}. They will contact you soon.`,
+        color: '#8b5cf6'
+      },
+      'PICKED_UP': {
+        title: '📦 Order Picked Up',
+        message: `Your order ${order.orderNumber} has been picked up by our delivery staff and is on its way!`,
+        color: '#3b82f6'
+      },
+      'IN_TRANSIT': {
+        title: '🚚 Order In Transit',
+        message: `Your order ${order.orderNumber} is currently in transit to your delivery address.`,
+        color: '#f59e0b'
+      },
+      'OUT_FOR_DELIVERY': {
+        title: '🚚 Order Out for Delivery',
+        message: `Your order ${order.orderNumber} is out for delivery! Please be available to receive it.`,
+        color: '#f59e0b'
+      },
+      'DELIVERED': {
+        title: '✅ Order Delivered',
+        message: `Your order ${order.orderNumber} has been delivered successfully! Thank you for shopping with us.`,
+        color: '#10b981'
+      },
+      'FAILED': {
+        title: '❌ Delivery Failed',
+        message: `We couldn't deliver your order ${order.orderNumber}. Please contact support for assistance.`,
+        color: '#ef4444'
+      }
+    };
+    
+    const info = statusMessages[status] || statusMessages['IN_TRANSIT'];
+    
+    const deliveryStaffInfo = deliveryStaff ? `
+      <div class="staff-info" style="background-color: #f0fdf4; padding: 15px; margin: 15px 0; border-radius: 8px;">
+        <p><strong>Delivery Staff:</strong> ${deliveryStaff.fullName || 'N/A'}</p>
+        <p><strong>Contact:</strong> ${deliveryStaff.phone || 'N/A'}</p>
+      </div>
+    ` : '';
+    
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; }
+          .header { background: ${info.color}; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .header h1 { color: white; margin: 0; font-size: 24px; }
+          .content { padding: 30px; }
+          .delivery-box { background-color: #f0fdf4; border-left: 4px solid ${info.color}; padding: 15px; margin: 20px 0; border-radius: 8px; }
+          .order-details { background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; }
+          .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>${info.title}</h1>
+          </div>
+          <div class="content">
+            <p>Dear <strong>${customer.fullName}</strong>,</p>
+            <p>${info.message}</p>
+            
+            <div class="delivery-box">
+              <p><strong>Delivery Status:</strong> ${status.replace('_', ' ')}</p>
+              ${location ? `<p><strong>Current Location:</strong> ${location}</p>` : ''}
+            </div>
+            
+            ${deliveryStaffInfo}
+            
+            <div class="order-details">
+              <h3>Order Details</h3>
+              <p><strong>Order Number:</strong> ${order.orderNumber}</p>
+              <p><strong>Total Amount:</strong> M${parseFloat(order.grandTotal).toFixed(2)}</p>
+              <p><strong>Order Date:</strong> ${new Date(order.createdAt).toLocaleDateString()}</p>
+            </div>
+            
+            <p>You can track your delivery status in your account dashboard.</p>
+            <p>Thank you for shopping with ${process.env.PHARMACY_NAME || 'Pharmacy POS'}!</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} ${process.env.PHARMACY_NAME || 'Pharmacy POS'}. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    const apiKey = process.env.BREVO_API_KEY;
+    
+    if (!apiKey) {
+      console.log('⚠️ BREVO_API_KEY not set, email not sent');
+      return false;
+    }
+    
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'api-key': apiKey
+      },
+      body: JSON.stringify({
+        sender: {
+          name: process.env.PHARMACY_NAME || 'Pharmacy POS',
+          email: process.env.SMTP_FROM || 'noreply@pharmacy.com'
+        },
+        to: [{ email: customer.email }],
+        subject: `${info.title} - Order ${order.orderNumber}`,
+        htmlContent: html
+      })
+    });
+    
+    if (response.ok) {
+      console.log(`✅ Delivery email sent to ${customer.email}: ${status}`);
+      return true;
+    } else {
+      const error = await response.text();
+      console.error(`❌ Delivery email failed:`, error);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Delivery email error:', error.message);
+    return false;
+  }
+};
 
 // Get deliveries for delivery staff
 const getMyDeliveries = async (req, res) => {
@@ -46,7 +180,7 @@ const getAvailableOrders = async (req, res) => {
       },
       include: {
         user: {
-          select: { fullName: true, phone: true }
+          select: { fullName: true, phone: true, email: true }
         },
         address: true,
         orderItems: {
@@ -76,7 +210,7 @@ const assignDelivery = async (req, res) => {
     
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { user: true }
+      include: { user: true, address: true }
     });
     
     if (!order) {
@@ -86,6 +220,11 @@ const assignDelivery = async (req, res) => {
     if (order.status !== 'READY') {
       return res.status(400).json({ success: false, message: 'Order must be READY before assigning delivery' });
     }
+    
+    const deliveryStaff = await prisma.user.findUnique({
+      where: { id: deliveryStaffId },
+      select: { fullName: true, phone: true }
+    });
     
     const existingDelivery = await prisma.delivery.findUnique({
       where: { orderId }
@@ -145,6 +284,9 @@ const assignDelivery = async (req, res) => {
       sendNotification(io, order.userId, 'Delivery Assigned', `Your order #${order.orderNumber} has been assigned to a delivery partner`, 'DELIVERY');
     }
     
+    // Send email notification to customer
+    await sendDeliveryEmail(order, order.user, 'ASSIGNED', 'Pharmacy', deliveryStaff);
+    
     res.json({ success: true, data: delivery, message: 'Delivery assigned successfully' });
   } catch (error) {
     console.error('Error assigning delivery:', error);
@@ -164,7 +306,7 @@ const selfAssignDelivery = async (req, res) => {
         status: 'READY',
         delivery: null
       },
-      include: { user: true }
+      include: { user: true, address: true }
     });
     
     if (!order) {
@@ -185,6 +327,11 @@ const selfAssignDelivery = async (req, res) => {
         message: `You already have ${activeDeliveries} active deliveries. Please complete some first.` 
       });
     }
+    
+    const deliveryStaff = await prisma.user.findUnique({
+      where: { id: deliveryStaffId },
+      select: { fullName: true, phone: true }
+    });
     
     const delivery = await prisma.delivery.create({
       data: {
@@ -227,6 +374,9 @@ const selfAssignDelivery = async (req, res) => {
       sendNotification(io, order.userId, 'Delivery Assigned', `Your order #${order.orderNumber} has been accepted for delivery`, 'DELIVERY');
     }
     
+    // Send email notification to customer
+    await sendDeliveryEmail(order, order.user, 'ASSIGNED', 'Pharmacy', deliveryStaff);
+    
     res.json({ 
       success: true, 
       data: delivery, 
@@ -238,7 +388,7 @@ const selfAssignDelivery = async (req, res) => {
   }
 };
 
-// Update delivery status (Delivery staff)
+// Update delivery status (Delivery staff) - WITH EMAIL
 const updateDeliveryStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -253,7 +403,17 @@ const updateDeliveryStatus = async (req, res) => {
     
     const delivery = await prisma.delivery.findUnique({
       where: { id },
-      include: { order: true }
+      include: { 
+        order: { 
+          include: { 
+            user: true,
+            address: true 
+          } 
+        },
+        deliveryStaff: {
+          select: { fullName: true, phone: true }
+        }
+      }
     });
     
     if (!delivery) {
@@ -282,7 +442,7 @@ const updateDeliveryStatus = async (req, res) => {
       include: {
         order: {
           include: {
-            user: { select: { id: true, fullName: true, phone: true } }
+            user: { select: { id: true, fullName: true, phone: true, email: true } }
           }
         }
       }
@@ -298,11 +458,21 @@ const updateDeliveryStatus = async (req, res) => {
       if (io) {
         sendNotification(io, updatedDelivery.order.userId, 'Order Delivered', `Your order #${updatedDelivery.order.orderNumber} has been delivered successfully!`, 'DELIVERY');
       }
+    } else if (status === 'FAILED') {
+      await prisma.order.update({
+        where: { id: delivery.orderId },
+        data: { status: 'CANCELLED' }
+      });
     } else {
       const io = req.app.get('io');
       if (io) {
         sendNotification(io, updatedDelivery.order.userId, 'Delivery Update', `Your order #${updatedDelivery.order.orderNumber} is now ${status.replace('_', ' ')}`, 'DELIVERY');
       }
+    }
+    
+    // Send email notification to customer on status change (except ASSIGNED which already sent)
+    if (status !== 'ASSIGNED') {
+      await sendDeliveryEmail(delivery.order, delivery.order.user, status, location, delivery.deliveryStaff);
     }
     
     res.json({ success: true, data: updatedDelivery, message: 'Delivery status updated' });

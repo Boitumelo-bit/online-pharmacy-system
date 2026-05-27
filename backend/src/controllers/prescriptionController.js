@@ -2,7 +2,7 @@ const prisma = require('../config/prisma');
 const path = require('path');
 const fs = require('fs');
 const { sendPrescriptionUpdate, sendNotification } = require('../sockets/socketHandler');
-const { sendPrescriptionUpdateEmail } = require('../services/brevoEmailService');
+const { sendPrescriptionUpdateEmail } = require('../services/emailService'); // FIXED: changed from brevoEmailService to emailService
 
 // Ensure uploads directory exists
 const uploadDir = path.join(__dirname, '../../uploads/prescriptions');

@@ -119,6 +119,20 @@ const sendDeliveryAssignment = (io, orderId, orderNumber, deliveryStaffId, custo
   console.log(`🚚 Delivery assignment notification sent for order #${orderNumber}`);
 };
 
+// ADDED: Send prescription update notification
+const sendPrescriptionUpdate = (io, userId, prescription) => {
+  if (!userId) return;
+  io.to(`user_${userId}`).emit('prescription_updated', {
+    prescriptionId: prescription.id,
+    status: prescription.status,
+    message: `Your prescription has been ${prescription.status.toLowerCase()}`,
+    timestamp: new Date(),
+  });
+  
+  sendNotification(io, userId, 'Prescription Update', `Your prescription has been ${prescription.status.toLowerCase()}`, 'PRESCRIPTION', { prescriptionId: prescription.id });
+  console.log(`📋 Prescription update sent to user ${userId}: ${prescription.status}`);
+};
+
 module.exports = {
   socketHandler,
   sendNotification,
@@ -127,4 +141,5 @@ module.exports = {
   sendLowStockAlert,
   sendExpiryAlert,
   sendDeliveryAssignment,
+  sendPrescriptionUpdate, // ADDED: Export the new function
 };

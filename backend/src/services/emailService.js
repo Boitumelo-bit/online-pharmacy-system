@@ -180,8 +180,90 @@ const sendOrderStatusUpdate = async (order, user, oldStatus, newStatus) => {
   return sendEmailViaApi(user.email, `Order Update #${order.orderNumber}`, html);
 };
 
+// Send prescription update email
+const sendPrescriptionUpdateEmail = async (prescription, user) => {
+  const statusMessages = {
+    'APPROVED': {
+      title: '✅ Prescription Approved',
+      message: 'Great news! Your prescription has been approved. You can now order the prescribed medicines.',
+      color: '#10b981'
+    },
+    'REJECTED': {
+      title: '❌ Prescription Rejected',
+      message: `Your prescription has been rejected. ${prescription.rejectionReason ? `Reason: ${prescription.rejectionReason}` : 'Please contact us for more information.'}`,
+      color: '#ef4444'
+    },
+    'PENDING': {
+      title: '📋 Prescription Received',
+      message: 'Your prescription has been received and is pending review by our pharmacist.',
+      color: '#f59e0b'
+    }
+  };
+  
+  const info = statusMessages[prescription.status] || statusMessages['PENDING'];
+  
+  const itemsHtml = prescription.items && prescription.items.length > 0 ? `
+    <div style="margin: 20px 0;">
+      <h3 style="color: #1f2937;">Prescribed Medicines:</h3>
+      <ul style="list-style: none; padding: 0;">
+        ${prescription.items.map(item => `
+          <li style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+            <strong>${item.medicineName}</strong><br/>
+            <span style="color: #6b7280; font-size: 14px;">Quantity: ${item.quantity} | Dosage: ${item.dosage || 'As prescribed'}</span>
+          </li>
+        `).join('')}
+      </ul>
+    </div>
+  ` : '';
+  
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; border-radius: 10px; }
+        .header { background: ${info.color}; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+        .header h1 { color: white; margin: 0; font-size: 24px; }
+        .content { padding: 30px; }
+        .info-box { background-color: #f0fdf4; border-left: 4px solid ${info.color}; padding: 15px; margin: 20px 0; border-radius: 8px; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; border-top: 1px solid #e2e8f0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>${info.title}</h1>
+        </div>
+        <div class="content">
+          <p>Dear <strong>${user.fullName}</strong>,</p>
+          <p>${info.message}</p>
+          
+          <div class="info-box">
+            <p><strong>Prescription ID:</strong> ${prescription.id}</p>
+            <p><strong>Status:</strong> ${prescription.status}</p>
+            <p><strong>Date:</strong> ${new Date(prescription.createdAt).toLocaleDateString()}</p>
+          </div>
+          
+          ${itemsHtml}
+          
+          <p>You can check the status of your prescription in your account dashboard.</p>
+          <p>Thank you for choosing ${process.env.PHARMACY_NAME || 'Pharmacy POS'}!</p>
+        </div>
+        <div class="footer">
+          <p>&copy; ${new Date().getFullYear()} ${process.env.PHARMACY_NAME || 'Pharmacy POS'}. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  return sendEmailViaApi(user.email, `${info.title} - Prescription Update`, html);
+};
+
 module.exports = {
   sendWelcomeEmail,
   sendOrderConfirmation,
   sendOrderStatusUpdate,
+  sendPrescriptionUpdateEmail,  // ADDED
 };

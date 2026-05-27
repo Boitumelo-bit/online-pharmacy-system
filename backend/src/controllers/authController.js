@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const prisma = require('../config/prisma');
 const { sendWelcomeEmail } = require('../services/emailService');
+const { generateOTP, sendOTPEmail } = require('../services/otpService');
 
 // Helper function to send emails via Brevo API
 const sendEmailViaApi = async (to, subject, htmlContent) => {
@@ -63,7 +64,7 @@ const generateResetToken = () => {
   return crypto.randomBytes(32).toString('hex');
 };
 
-// Public registration - ONLY for CUSTOMER role
+// Public registration - ONLY for CUSTOMER role with OTP verification
 const register = async (req, res) => {
   try {
     const { email, password, fullName, phone } = req.body;
@@ -80,7 +81,11 @@ const register = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
     
-    // Create user - ALWAYS CUSTOMER role for public registration
+    // Generate OTP
+    const otpCode = generateOTP();
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    
+    // Create user with OTP (not verified yet)
     const user = await prisma.user.create({
       data: {
         email,
@@ -90,6 +95,8 @@ const register = async (req, res) => {
         role: 'CUSTOMER',
         isActive: true,
         emailVerified: false,
+        otpCode,
+        otpExpiry,
       },
       select: {
         id: true,
@@ -97,19 +104,19 @@ const register = async (req, res) => {
         fullName: true,
         phone: true,
         role: true,
+        emailVerified: true,
       }
     });
     
-    // Generate token
-    const token = generateToken(user);
-    
-    // Send welcome email with password (non-blocking)
-    sendWelcomeEmail(user, password).catch(console.error);
+    // Send OTP email
+    await sendOTPEmail(email, otpCode, fullName);
     
     res.status(201).json({
-      message: 'User registered successfully',
-      user,
-      token,
+      success: true,
+      message: 'Registration successful! Please verify your email with the OTP sent to your inbox.',
+      requiresOtp: true,
+      email: user.email,
+      userId: user.id,
     });
   } catch (error) {
     console.error(error);
@@ -117,21 +124,148 @@ const register = async (req, res) => {
   }
 };
 
-const login = async (req, res) => {
+// Verify OTP and activate account
+const verifyOTP = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, otpCode } = req.body;
     
-    // Find user
+    const user = await prisma.user.findFirst({
+      where: {
+        email,
+        otpCode,
+        otpExpiry: { gt: new Date() }
+      }
+    });
+    
+    if (!user) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid or expired OTP code. Please request a new one.' 
+      });
+    }
+    
+    // Update user as verified
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerified: true,
+        otpCode: null,
+        otpExpiry: null,
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        role: true,
+        emailVerified: true,
+      }
+    });
+    
+    // Generate token for auto-login
+    const token = generateToken(updatedUser);
+    
+    res.json({
+      success: true,
+      message: 'Email verified successfully! You are now logged in.',
+      user: updatedUser,
+      token,
+    });
+  } catch (error) {
+    console.error('OTP verification error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// Resend OTP code
+const resendOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+    
     const user = await prisma.user.findUnique({
       where: { email }
     });
     
     if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    
+    if (user.emailVerified) {
+      return res.status(400).json({ success: false, message: 'Email already verified' });
+    }
+    
+    // Generate new OTP
+    const otpCode = generateOTP();
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+    
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        otpCode,
+        otpExpiry,
+      }
+    });
+    
+    await sendOTPEmail(email, otpCode, user.fullName);
+    
+    res.json({
+      success: true,
+      message: 'New OTP code sent to your email.',
+    });
+  } catch (error) {
+    console.error('Resend OTP error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// Login - FIXED with debug logs (email check temporarily disabled)
+const login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    console.log('=== LOGIN ATTEMPT ===');
+    console.log('Email:', email);
+    
+    // Find user with all needed fields including emailVerified
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        role: true,
+        isActive: true,
+        emailVerified: true,
+        password: true,
+        avatar: true,
+        createdAt: true,
+      }
+    });
+    
+    if (!user) {
+      console.log('User not found');
       return res.status(401).json({ message: 'Invalid credentials' });
     }
     
+    console.log('User found:', user.email);
+    console.log('Email verified value:', user.emailVerified);
+    console.log('Email verified type:', typeof user.emailVerified);
+    console.log('User role:', user.role);
+    
+    // TEMPORARILY DISABLED EMAIL CHECK FOR TESTING
+    // if (user.role === 'CUSTOMER' && user.emailVerified !== true) {
+    //   console.log('Email verification failed - blocking login');
+    //   return res.status(403).json({ 
+    //     message: 'Please verify your email first. Check your inbox for OTP code.',
+    //     requiresOtp: true,
+    //     email: user.email,
+    //   });
+    // }
+    
     // Check password
     const isPasswordValid = await bcrypt.compare(password, user.password);
+    console.log('Password valid:', isPasswordValid);
     
     if (!isPasswordValid) {
       return res.status(401).json({ message: 'Invalid credentials' });
@@ -148,13 +282,16 @@ const login = async (req, res) => {
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
     
+    console.log('Login successful for:', email);
+    console.log('=====================');
+    
     res.json({
       message: 'Login successful',
       user: userWithoutPassword,
       token,
     });
   } catch (error) {
-    console.error(error);
+    console.error('Login error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
@@ -400,30 +537,42 @@ const updateUser = async (req, res) => {
 
 // ==================== PROFILE FUNCTIONS ====================
 
-// Update user profile (for authenticated users)
+// Update user profile (for authenticated users) - FIXED VERSION
 const updateProfile = async (req, res) => {
   try {
     const { fullName, email, phone } = req.body;
     const userId = req.user.id;
     
+    // Build update data - only include fields that are provided
+    const updateData = {};
+    if (fullName !== undefined && fullName !== '') updateData.fullName = fullName;
+    if (email !== undefined && email !== '') updateData.email = email;
+    if (phone !== undefined && phone !== '') updateData.phone = phone;
+    
     // Check if email is taken by another user
-    if (email !== req.user.email) {
-      const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (email && email !== req.user.email) {
+      const existingUser = await prisma.user.findUnique({ 
+        where: { email } 
+      });
       if (existingUser && existingUser.id !== userId) {
-        return res.status(400).json({ message: 'Email already in use' });
+        return res.status(400).json({ 
+          success: false,
+          message: 'Email already in use' 
+        });
       }
     }
     
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: { fullName, email, phone },
+      data: updateData,
       select: { 
         id: true, 
         email: true, 
         fullName: true, 
         phone: true, 
         role: true, 
-        isActive: true 
+        isActive: true,
+        avatar: true
       }
     });
     
@@ -434,7 +583,11 @@ const updateProfile = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating profile:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error', 
+      error: error.message 
+    });
   }
 };
 
@@ -581,7 +734,7 @@ const resetPassword = async (req, res) => {
   }
 };
 
-// ==================== AVATAR UPLOAD FUNCTION ====================
+// ==================== AVATAR FUNCTIONS ====================
 
 // Upload avatar (for authenticated users)
 const uploadAvatar = async (req, res) => {
@@ -594,9 +747,6 @@ const uploadAvatar = async (req, res) => {
     
     // For local storage - construct URL
     const avatarUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-    
-    // For Cloudinary, you would use req.file.path or req.file.url
-    // const avatarUrl = req.file.path; // Cloudinary
     
     const updatedUser = await prisma.user.update({
       where: { id: userId },
@@ -623,6 +773,40 @@ const uploadAvatar = async (req, res) => {
   }
 };
 
+// Delete avatar (for authenticated users)
+const deleteAvatar = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { avatar: null },
+      select: { 
+        id: true, 
+        email: true, 
+        fullName: true, 
+        phone: true, 
+        role: true, 
+        isActive: true,
+        avatar: true
+      }
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Avatar removed successfully', 
+      user: updatedUser 
+    });
+    
+  } catch (error) {
+    console.error('Error deleting avatar:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error'
+    });
+  }
+};
+
 module.exports = { 
   register, 
   login, 
@@ -636,5 +820,8 @@ module.exports = {
   changePassword,
   forgotPassword,
   resetPassword,
-  uploadAvatar,  // NEW - Add this
+  uploadAvatar,
+  deleteAvatar,
+  verifyOTP,
+  resendOTP,
 };

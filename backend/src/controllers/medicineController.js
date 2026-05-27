@@ -22,7 +22,7 @@ const getMedicines = async (req, res) => {
     } = req.query;
 
     const skip = (page - 1) * limit;
-    const where = {};
+    const where = { isActive: true };
     
     if (search) {
       where.OR = [
@@ -56,6 +56,7 @@ const getMedicines = async (req, res) => {
     const total = await prisma.medicine.count({ where });
     
     res.json({
+      success: true,
       data: medicines,
       pagination: {
         page: parseInt(page),
@@ -92,6 +93,40 @@ const getMedicineById = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error fetching medicine', error: error.message });
+  }
+};
+
+// Get medicine images - OPTIMIZED VERSION
+const getMedicineImages = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const images = await prisma.medicineImage.findMany({
+      where: { 
+        medicineId: id 
+      },
+      select: {
+        id: true,
+        url: true,
+        isPrimary: true,
+      },
+      orderBy: {
+        isPrimary: 'desc'
+      }
+    });
+    
+    res.json({
+      success: true,
+      images: images
+    });
+    
+  } catch (error) {
+    console.error('Error fetching medicine images:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching images',
+      images: []
+    });
   }
 };
 
@@ -438,15 +473,17 @@ const deleteMedicine = async (req, res) => {
   }
 };
 
-// Upload medicine images
+// Upload medicine images - FIXED VERSION
 const uploadImages = async (req, res) => {
   try {
     const { id } = req.params;
     const files = req.files;
     
-    // Check if medicine exists
     const medicine = await prisma.medicine.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        images: true
+      }
     });
     
     if (!medicine) {
@@ -458,6 +495,7 @@ const uploadImages = async (req, res) => {
     }
     
     const uploadedImages = [];
+    const currentImageCount = medicine.images?.length || 0;
     
     for (let i = 0; i < files.length; i++) {
       const result = await cloudinary.uploader.upload(files[i].path, {
@@ -468,17 +506,24 @@ const uploadImages = async (req, res) => {
         data: {
           medicineId: id,
           url: result.secure_url,
-          isPrimary: i === 0,
+          isPrimary: (i === 0 && currentImageCount === 0),
         },
       });
       
       uploadedImages.push(image);
     }
     
-    res.json({ images: uploadedImages });
+    res.json({ 
+      success: true,
+      images: uploadedImages,
+      message: `${uploadedImages.length} image(s) uploaded successfully`
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error uploading images', error: error.message });
+    console.error('Error uploading images:', error);
+    res.status(500).json({ 
+      message: 'Error uploading images', 
+      error: error.message 
+    });
   }
 };
 
@@ -512,31 +557,73 @@ const setPrimaryImage = async (req, res) => {
   }
 };
 
-// Delete medicine image
+// Delete medicine image - FIXED VERSION
 const deleteMedicineImage = async (req, res) => {
   try {
-    const { imageId } = req.params;
+    const imageId = req.params.imageId;
+    
+    console.log('Deleting image with ID:', imageId);
+    
+    if (!imageId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Image ID is required' 
+      });
+    }
     
     const image = await prisma.medicineImage.findUnique({
       where: { id: imageId }
     });
     
     if (!image) {
-      return res.status(404).json({ message: 'Image not found' });
+      console.log('Image not found:', imageId);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Image not found' 
+      });
     }
     
-    // Delete from Cloudinary
-    const publicId = image.url.split('/').slice(-2).join('/').split('.')[0];
-    await cloudinary.uploader.destroy(publicId);
+    // Delete from Cloudinary (optional)
+    try {
+      if (image.url && process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_CLOUD_NAME !== 'demo') {
+        const urlParts = image.url.split('/');
+        const filename = urlParts[urlParts.length - 1];
+        const publicId = `pharmacy/medicines/${image.medicineId}/${filename.split('.')[0]}`;
+        await cloudinary.uploader.destroy(publicId);
+      }
+    } catch (cloudinaryError) {
+      console.warn('Cloudinary deletion failed:', cloudinaryError.message);
+    }
     
     await prisma.medicineImage.delete({
-      where: { id: imageId },
+      where: { id: imageId }
     });
     
-    res.json({ message: 'Image deleted successfully' });
+    if (image.isPrimary) {
+      const anotherImage = await prisma.medicineImage.findFirst({
+        where: { medicineId: image.medicineId }
+      });
+      
+      if (anotherImage) {
+        await prisma.medicineImage.update({
+          where: { id: anotherImage.id },
+          data: { isPrimary: true }
+        });
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Image deleted successfully' 
+    });
+    
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error deleting image', error: error.message });
+    console.error('Error deleting image:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error deleting image',
+      error: error.message 
+    });
   }
 };
 
@@ -629,6 +716,7 @@ const getSearchSuggestions = async (req, res) => {
 module.exports = {
   getMedicines,
   getMedicineById,
+  getMedicineImages,
   createMedicine,
   updateMedicine,
   deleteMedicine,

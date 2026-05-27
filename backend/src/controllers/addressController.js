@@ -113,18 +113,29 @@ const updateAddress = async (req, res) => {
   }
 };
 
-// Delete address
+// Delete address - FIXED VERSION WITH MESSAGE
 const deleteAddress = async (req, res) => {
   try {
     const { id } = req.params;
     
     // Check if address exists and belongs to user
     const address = await prisma.address.findFirst({
-      where: { id, userId: req.user.id }
+      where: { id, userId: req.user.id },
+      include: {
+        orders: true
+      }
     });
     
     if (!address) {
       return res.status(404).json({ error: 'Address not found' });
+    }
+    
+    // Check if address has orders
+    if (address.orders && address.orders.length > 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Cannot delete address with orders. This address is linked to existing orders.'
+      });
     }
     
     // If deleting default address, set another as default if exists
@@ -147,6 +158,15 @@ const deleteAddress = async (req, res) => {
     res.json({ success: true, message: 'Address deleted successfully' });
   } catch (error) {
     console.error('Error deleting address:', error);
+    
+    // Handle foreign key constraint
+    if (error.code === 'P2003') {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Cannot delete address with orders. This address is linked to existing orders.'
+      });
+    }
+    
     res.status(500).json({ error: error.message });
   }
 };

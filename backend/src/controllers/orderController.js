@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { sendOrderUpdate, sendNotification } = require('../sockets/socketHandler');
+const fetch = require('node-fetch');
 
 // Try to load email services, fallback gracefully
 let sendOrderConfirmation, sendOrderStatusUpdate;
@@ -21,6 +22,153 @@ try {
     sendOrderStatusUpdate = async () => {};
   }
 }
+
+// Helper function to send delivery email via Brevo
+const sendDeliveryEmail = async (order, customer, status, location, deliveryStaff) => {
+  try {
+    const statusMessages = {
+      'ASSIGNED': {
+        title: '📦 Delivery Assigned',
+        message: `A delivery staff has been assigned to your order ${order.orderNumber}. They will contact you soon.`,
+        color: '#8b5cf6'
+      },
+      'PICKED_UP': {
+        title: '📦 Order Picked Up',
+        message: `Your order ${order.orderNumber} has been picked up by our delivery staff and is on its way!`,
+        color: '#3b82f6'
+      },
+      'IN_TRANSIT': {
+        title: '🚚 Order In Transit',
+        message: `Your order ${order.orderNumber} is currently in transit to your delivery address.`,
+        color: '#f59e0b'
+      },
+      'DELIVERED': {
+        title: '✅ Order Delivered',
+        message: `Your order ${order.orderNumber} has been delivered successfully! Thank you for shopping with us.`,
+        color: '#10b981'
+      },
+      'FAILED': {
+        title: '❌ Delivery Failed',
+        message: `We couldn't deliver your order ${order.orderNumber}. Please contact support for assistance.`,
+        color: '#ef4444'
+      }
+    };
+    
+    const info = statusMessages[status] || statusMessages['IN_TRANSIT'];
+    
+    const deliveryStaffInfo = deliveryStaff ? `
+      <div style="background-color: #f0fdf4; padding: 15px; margin: 15px 0; border-radius: 8px;">
+        <p><strong>Delivery Staff:</strong> ${deliveryStaff.fullName || 'N/A'}</p>
+        <p><strong>Contact:</strong> ${deliveryStaff.phone || 'N/A'}</p>
+      </div>
+    ` : '';
+    
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; border-radius: 10px; }
+          .header { background: ${info.color}; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .header h1 { color: white; margin: 0; font-size: 24px; }
+          .content { padding: 30px; }
+          .delivery-box { background-color: #f0fdf4; border-left: 4px solid ${info.color}; padding: 15px; margin: 20px 0; border-radius: 8px; }
+          .order-details { background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; }
+          .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>${info.title}</h1>
+          </div>
+          <div class="content">
+            <p>Dear <strong>${customer.fullName}</strong>,</p>
+            <p>${info.message}</p>
+            
+            <div class="delivery-box">
+              <p><strong>Delivery Status:</strong> ${status.replace('_', ' ')}</p>
+              ${location ? `<p><strong>Current Location:</strong> ${location}</p>` : ''}
+            </div>
+            
+            ${deliveryStaffInfo}
+            
+            <div class="order-details">
+              <h3>Order Details</h3>
+              <p><strong>Order Number:</strong> ${order.orderNumber}</p>
+              <p><strong>Total Amount:</strong> M${parseFloat(order.grandTotal).toFixed(2)}</p>
+              <p><strong>Order Date:</strong> ${new Date(order.createdAt).toLocaleDateString()}</p>
+            </div>
+            
+            <p>You can track your delivery status in your account dashboard.</p>
+            <p>Thank you for shopping with ${process.env.PHARMACY_NAME || 'Pharmacy POS'}!</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} ${process.env.PHARMACY_NAME || 'Pharmacy POS'}. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    const apiKey = process.env.BREVO_API_KEY;
+    
+    if (!apiKey) {
+      console.log('⚠️ BREVO_API_KEY not set, email not sent');
+      return false;
+    }
+    
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'api-key': apiKey
+      },
+      body: JSON.stringify({
+        sender: {
+          name: process.env.PHARMACY_NAME || 'Pharmacy POS',
+          email: process.env.SMTP_FROM || 'noreply@pharmacy.com'
+        },
+        to: [{ email: customer.email }],
+        subject: `${info.title} - Order ${order.orderNumber}`,
+        htmlContent: html
+      })
+    });
+    
+    if (response.ok) {
+      console.log(`✅ Delivery email sent to ${customer.email}: ${status}`);
+      return true;
+    } else {
+      const error = await response.text();
+      console.error(`❌ Delivery email failed:`, error);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Delivery email error:', error.message);
+    return false;
+  }
+};
+
+// Helper function to get system settings
+const getSystemSettings = async () => {
+  try {
+    const settings = await prisma.setting.findMany();
+    const settingsMap = {};
+    settings.forEach(setting => {
+      try {
+        settingsMap[setting.key] = JSON.parse(setting.value);
+      } catch (e) {
+        settingsMap[setting.key] = setting.value;
+      }
+    });
+    return settingsMap;
+  } catch (error) {
+    console.error('Error fetching settings:', error);
+    return {};
+  }
+};
 
 // Get all orders for authenticated user
 const getUserOrders = async (req, res) => {
@@ -63,6 +211,7 @@ const getUserOrders = async (req, res) => {
         orderBy: { createdAt: 'desc' },
       });
     } else if (userRole === 'DELIVERY_STAFF') {
+      // FIXED: Only return assigned orders, not available orders
       const assignedOrders = await prisma.order.findMany({
         where: { 
           delivery: { deliveryStaffId: userId }
@@ -93,37 +242,8 @@ const getUserOrders = async (req, res) => {
         orderBy: { createdAt: 'desc' },
       });
       
-      const availableOrders = await prisma.order.findMany({
-        where: { 
-          status: 'READY',
-          delivery: null
-        },
-        include: {
-          user: {
-            select: { id: true, fullName: true, email: true, phone: true }
-          },
-          address: true,
-          orderItems: {
-            include: {
-              medicine: {
-                select: {
-                  id: true,
-                  name: true,
-                  price: true,
-                  images: {
-                    where: { isPrimary: true },
-                    take: 1,
-                  }
-                }
-              }
-            }
-          },
-          prescription: true,
-        },
-        orderBy: { createdAt: 'asc' },
-      });
-      
-      orders = { assigned: assignedOrders, available: availableOrders };
+      // Return only assigned orders as an array, not an object with available
+      orders = assignedOrders;
     } else {
       orders = await prisma.order.findMany({
         where: { userId },
@@ -223,7 +343,7 @@ const getOrderById = async (req, res) => {
   }
 };
 
-// Create new order
+// Create new order - UPDATED with dynamic settings
 const createOrder = async (req, res) => {
   try {
     const {
@@ -235,6 +355,12 @@ const createOrder = async (req, res) => {
     } = req.body;
     
     const userId = req.user.id;
+    
+    // Fetch system settings for calculations
+    const settings = await getSystemSettings();
+    const vatPercentage = parseFloat(settings.vat_percentage) || 15;
+    const deliveryFeeAmount = parseFloat(settings.delivery_fee) || 5;
+    const freeDeliveryMin = parseFloat(settings.free_delivery_min_amount) || 100;
     
     let subtotal = 0;
     const orderItems = [];
@@ -266,8 +392,9 @@ const createOrder = async (req, res) => {
       });
     }
     
-    const tax = subtotal * 0.15;
-    const deliveryFee = subtotal > 100 ? 0 : 5;
+    // Use dynamic values from settings
+    const tax = subtotal * (vatPercentage / 100);
+    const deliveryFee = subtotal > freeDeliveryMin ? 0 : deliveryFeeAmount;
     const grandTotal = subtotal + tax + deliveryFee;
     const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     
@@ -305,10 +432,13 @@ const createOrder = async (req, res) => {
     
     const io = req.app.get('io');
     
-    // Debug logs
     console.log('📢 === SENDING NOTIFICATIONS FOR ORDER ===');
     console.log('📢 Order Number:', orderNumber);
     console.log('📢 Customer:', order.user.fullName);
+    console.log('📢 Subtotal:', subtotal);
+    console.log('📢 Tax Rate:', vatPercentage, '%');
+    console.log('📢 Tax:', tax);
+    console.log('📢 Delivery Fee:', deliveryFee);
     console.log('📢 Total:', grandTotal);
     
     // Send to customer
@@ -508,7 +638,7 @@ const cancelOrder = async (req, res) => {
   }
 };
 
-// Get available orders for delivery staff
+// Get available orders for delivery staff - KEPT but frontend doesn't call it anymore
 const getAvailableOrders = async (req, res) => {
   try {
     const userRole = req.user.role;
@@ -550,19 +680,27 @@ const getAvailableOrders = async (req, res) => {
   }
 };
 
-// Self-assign delivery for delivery staff
+// Self-assign delivery for delivery staff - DISABLED for delivery staff (only Admin/Pharmacist can assign)
 const selfAssignDelivery = async (req, res) => {
   try {
     const { orderId } = req.params;
     const user = req.user;
     
-    if (user.role !== 'DELIVERY_STAFF') {
-      return res.status(403).json({ success: false, message: 'Only delivery staff can self-assign orders' });
+    // DISABLED: Delivery staff cannot self-assign orders
+    if (user.role === 'DELIVERY_STAFF') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Delivery staff cannot self-assign orders. Orders must be assigned by Admin or Pharmacist.' 
+      });
+    }
+    
+    if (user.role !== 'ADMIN' && user.role !== 'PHARMACIST') {
+      return res.status(403).json({ success: false, message: 'Unauthorized' });
     }
     
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { delivery: true, user: true }
+      include: { delivery: true, user: true, address: true }
     });
     
     if (!order) {
@@ -606,18 +744,22 @@ const selfAssignDelivery = async (req, res) => {
     sendNotification(io, order.userId, 'Delivery Assigned', `Your order ${order.orderNumber} has been assigned to a delivery staff!`, 'DELIVERY');
     sendNotification(io, user.id, 'Order Assigned', `You have been assigned to deliver order ${order.orderNumber}`, 'DELIVERY');
     
+    // Send email notification
+    const deliveryStaff = { fullName: user.fullName, phone: user.phone };
+    await sendDeliveryEmail(order, order.user, 'ASSIGNED', 'Pharmacy', deliveryStaff);
+    
     res.json({
       success: true,
       data: { order: updatedOrder, delivery },
-      message: 'Order self-assigned successfully'
+      message: 'Order assigned successfully'
     });
   } catch (error) {
-    console.error('Error self-assigning delivery:', error);
+    console.error('Error assigning delivery:', error);
     res.status(500).json({ success: false, message: 'Error assigning delivery', error: error.message });
   }
 };
 
-// Update delivery status
+// Update delivery status - WITH EMAIL
 const updateDeliveryStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -635,7 +777,17 @@ const updateDeliveryStatus = async (req, res) => {
         orderId,
         deliveryStaffId: user.id
       },
-      include: { order: { include: { user: true } } }
+      include: { 
+        order: { 
+          include: { 
+            user: true,
+            address: true 
+          } 
+        },
+        deliveryStaff: {
+          select: { fullName: true, phone: true }
+        }
+      }
     });
     
     if (!delivery) {
@@ -673,6 +825,9 @@ const updateDeliveryStatus = async (req, res) => {
       sendNotification(io, delivery.order.userId, 'Delivery Update', `Your order ${delivery.order.orderNumber}: ${status}`, 'DELIVERY');
     }
     
+    // Send email notification for delivery status updates
+    await sendDeliveryEmail(delivery.order, delivery.order.user, status, location, delivery.deliveryStaff);
+    
     res.json({
       success: true,
       data: updatedDelivery,
@@ -684,7 +839,7 @@ const updateDeliveryStatus = async (req, res) => {
   }
 };
 
-// Assign delivery staff to order (Admin/Pharmacist)
+// Assign delivery staff to order (Admin/Pharmacist) - WITH EMAIL
 const assignDeliveryStaff = async (req, res) => {
   try {
     const { id } = req.params;
@@ -700,7 +855,7 @@ const assignDeliveryStaff = async (req, res) => {
     
     const order = await prisma.order.findUnique({
       where: { id },
-      include: { delivery: true }
+      include: { delivery: true, user: true, address: true }
     });
     
     if (!order) {
@@ -761,6 +916,10 @@ const assignDeliveryStaff = async (req, res) => {
     
     sendNotification(io, deliveryStaffId, 'New Delivery Assignment', 
       `You have been assigned to deliver order ${order.orderNumber}`, 'DELIVERY');
+    
+    // Send email notification
+    const staffInfo = { fullName: deliveryStaff.fullName, phone: deliveryStaff.phone };
+    await sendDeliveryEmail(order, order.user, 'ASSIGNED', 'Pharmacy', staffInfo);
     
     res.json({
       success: true,
