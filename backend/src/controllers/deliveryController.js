@@ -1,6 +1,6 @@
 const prisma = require('../config/prisma');
 const { sendNotification } = require('../sockets/socketHandler');
-const fetch = require('node-fetch');
+const fetch = globalThis.fetch;
 
 // Helper function to send delivery email via Brevo
 const sendDeliveryEmail = async (order, customer, status, location, deliveryStaff) => {
