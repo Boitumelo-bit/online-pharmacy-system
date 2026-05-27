@@ -1,117 +1,147 @@
-import { io } from 'socket.io-client';
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import axios from 'axios';
 
-let socket = null;
-let reconnectAttempts = 0;
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-export const initializeSocket = () => {
-  if (socket && socket.connected) {
-    console.log('Socket already connected');
-    return socket;
-  }
-  
-  const socketUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-  console.log('Initializing socket connection to:', socketUrl);
-  
-  socket = io(socketUrl, {
-    auth: { token: localStorage.getItem('token') },
-    transports: ['websocket', 'polling'],
-    autoConnect: true,
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
-  });
-  
-  socket.on('connect', () => {
-    console.log('✅ Socket connected successfully');
-    reconnectAttempts = 0;
-    
-    // Join user room after connection
-    const token = localStorage.getItem('token');
-    if (token) {
-      const authStorage = localStorage.getItem('auth-storage');
-      if (authStorage) {
+export const useAuthStore = create(
+  persist(
+    (set, get) => ({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+
+      login: async (email, password) => {
+        set({ isLoading: true });
+        
         try {
-          const parsed = JSON.parse(authStorage);
-          const userId = parsed.state?.user?.id;
-          const userRole = parsed.state?.user?.role;
-          if (userId) {
-            joinUserRoom(userId);
-            if (userRole === 'ADMIN') {
-              joinAdminRoom();
-            } else if (userRole === 'PHARMACIST') {
-              joinPharmacistRoom();
-            } else if (userRole === 'DELIVERY_STAFF') {
-              joinDeliveryRoom();
+          const response = await axios.post(`${API_URL}/auth/login`, {
+            email,
+            password,
+          });
+          
+          const { user, token } = response.data;
+          
+          set({ 
+            user, 
+            token, 
+            isAuthenticated: true, 
+            isLoading: false 
+          });
+          
+          localStorage.setItem('token', token);
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          
+          return { success: true };
+        } catch (error) {
+          set({ isLoading: false });
+          return { 
+            success: false, 
+            error: error.response?.data?.message || 'Login failed' 
+          };
+        }
+      },
+
+      register: async (userData) => {
+        set({ isLoading: true });
+        
+        try {
+          const response = await axios.post(`${API_URL}/auth/register`, userData);
+          
+          if (response.data.requiresOtp) {
+            set({ isLoading: false });
+            return { 
+              success: true, 
+              requiresOtp: true,
+              email: response.data.email,
+              userId: response.data.userId,
+              message: response.data.message
+            };
+          }
+          
+          const { user, token } = response.data;
+          
+          set({ 
+            user, 
+            token, 
+            isAuthenticated: true, 
+            isLoading: false 
+          });
+          
+          localStorage.setItem('token', token);
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          
+          return { success: true };
+        } catch (error) {
+          set({ isLoading: false });
+          return { 
+            success: false, 
+            error: error.response?.data?.message || 'Registration failed' 
+          };
+        }
+      },
+
+      logout: () => {
+        set({ 
+          user: null, 
+          token: null, 
+          isAuthenticated: false, 
+          isLoading: false 
+        });
+        localStorage.removeItem('token');
+        delete axios.defaults.headers.common['Authorization'];
+      },
+
+      updateUser: (updatedUser) => {
+        set({ user: updatedUser });
+        
+        const persistedState = localStorage.getItem('auth-storage');
+        if (persistedState) {
+          try {
+            const data = JSON.parse(persistedState);
+            data.state.user = updatedUser;
+            localStorage.setItem('auth-storage', JSON.stringify(data));
+          } catch (error) {
+            console.error('Error updating persisted user:', error);
+          }
+        }
+      },
+
+      updateToken: (newToken) => {
+        set({ token: newToken });
+        localStorage.setItem('token', newToken);
+        axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+      },
+
+      fetchCurrentUser: async () => {
+        try {
+          const response = await axios.get(`${API_URL}/auth/me`);
+          const user = response.data;
+          set({ user });
+          
+          const persistedState = localStorage.getItem('auth-storage');
+          if (persistedState) {
+            try {
+              const data = JSON.parse(persistedState);
+              data.state.user = user;
+              localStorage.setItem('auth-storage', JSON.stringify(data));
+            } catch (error) {
+              console.error('Error updating persisted user:', error);
             }
           }
-        } catch (e) {
-          console.error('Error parsing auth-storage:', e);
+          
+          return { success: true, user };
+        } catch (error) {
+          return { success: false, error: error.response?.data?.message };
         }
+      },
+    }),
+    { 
+      name: 'auth-storage',
+      onRehydrateStorage: () => (state) => {
+        console.log('Rehydrated state:', state);
       }
     }
-  });
-  
-  socket.on('connect_error', (error) => {
-    console.error('❌ Socket connection error:', error.message);
-  });
-  
-  socket.on('disconnect', (reason) => {
-    console.log('🔌 Socket disconnected:', reason);
-  });
-  
-  return socket;
-};
-
-// Join user's personal notification room
-export const joinUserRoom = (userId) => {
-  if (socket && socket.connected) {
-    socket.emit('join-user-room', userId);
-    console.log(`📱 Joined user room: user_${userId}`);
-  } else {
-    console.log('Socket not connected, will join on connection');
-  }
-};
-
-// Join admin room
-export const joinAdminRoom = () => {
-  if (socket && socket.connected) {
-    socket.emit('join-admin');
-    console.log('👑 Joined admin room');
-  }
-};
-
-// Join pharmacist room
-export const joinPharmacistRoom = () => {
-  if (socket && socket.connected) {
-    socket.emit('join-pharmacist');
-    console.log('💊 Joined pharmacist room');
-  }
-};
-
-// Join delivery staff room
-export const joinDeliveryRoom = () => {
-  if (socket && socket.connected) {
-    socket.emit('join-delivery');
-    console.log('🚚 Joined delivery room');
-  }
-};
-
-export const getSocket = () => {
-  if (!socket) {
-    return initializeSocket();
-  }
-  return socket;
-};
-
-export const disconnectSocket = () => {
-  if (socket) {
-    socket.disconnect();
-    socket = null;
-  }
-};
-
-// Ensure socket is initialized on app start
-initializeSocket();
-
-export default { initializeSocket, getSocket, disconnectSocket, joinUserRoom, joinAdminRoom, joinPharmacistRoom, joinDeliveryRoom };
+  )
+);
