@@ -1,29 +1,49 @@
 services:
   - type: web
-    name: pharmacy-pos-api
-    runtime: node
-    rootDir: backend
-    buildCommand: npm install && npx prisma generate
-    startCommand: node src/server.js
-    plan: free
+    name: pharmacy-backend
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
     envVars:
+      - key: NODE_VERSION
+        value: 18
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
       - key: DATABASE_URL
-        sync: false
+        value: postgresql://neondb_owner:npg_MSTkd6QBR2rg@ep-muddy-dream-ap1nk6ym-pooler.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require
       - key: JWT_SECRET
-        sync: false
-      - key: BREVO_API_KEY
-        sync: false
+        value: my_super_secret_key_change_this_12345
+      - key: JWT_REFRESH_SECRET
+        value: my_refresh_secret_key_67890
+      - key: JWT_EXPIRES_IN
+        value: 7d
       - key: CLOUDINARY_CLOUD_NAME
-        sync: false
+        value: drfadxrym
       - key: CLOUDINARY_API_KEY
-        sync: false
+        value: 827751783715247
       - key: CLOUDINARY_API_SECRET
-        sync: false
+        value: BRC69Y01a2ADhW-lDoqObqKItZo
+      - key: BREVO_API_KEY
+        value: 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
+      - key: SMTP_HOST
+        value: smtp-relay.brevo.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        value: boitumelomosiuoa2002@gmail.com
+      - key: SMTP_PASS
+        value: ""
       - key: SMTP_FROM
         value: boitumelomosiuoa2002@gmail.com
       - key: PHARMACY_NAME
         value: Pharmacy POS System
-      - key: PORT
-        value: 5000
-      - key: NODE_VERSION
-        value: 20
+      - key: PHARMACY_ADDRESS
+        value: Maseru, Lesotho
+      - key: PHARMACY_PHONE
+        value: +266 6344 8303
+      - key: PHARMACY_EMAIL
+        value: info@pharmacy.com
+      - key: CORS_ORIGIN
+        value: https://your-frontend-url.vercel.app
